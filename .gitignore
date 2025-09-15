@@ -3,4 +3,6 @@ node_modules/
 *.log
 data/visibility-rules.json
 .DS_Store
+apps/web/.next/
+apps/web/node_modules/
 

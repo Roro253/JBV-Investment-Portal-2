@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
+import VisibilityPanel from "@/components/admin/VisibilityPanel";
 import { ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
@@ -261,8 +262,7 @@ export default function AdminPage() {
             className="w-full md:w-96 rounded-xl border px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
           />
           <span className="text-sm text-gray-500">{rows.length} records</span>
-          {/* Visibility panel button: implement as a drawer in components/admin/VisibilityPanel.tsx */}
-          {/* <VisibilityPanel tableId={MAIN_TABLE} rules={rules} onChangeRules={setRules} /> */}
+          <VisibilityPanel tableId={MAIN_TABLE} rules={rules} onChangeRules={setRules} />
         </div>
 
         <div className="overflow-hidden rounded-2xl border shadow-sm">
@@ -301,4 +301,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
