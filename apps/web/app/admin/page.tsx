@@ -3,8 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import VisibilityPanel from "@/components/admin/VisibilityPanel";
 import { ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
-const SSE_URL = `${API_BASE}/sse`;
+// When deployed together on Vercel, same-origin API: leave blank default
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 const MAIN_TABLE = "Partner Investments";
 
 // Simple format helpers (replace with lib/format.ts if you split)
@@ -63,7 +63,7 @@ function NumberCell({ value, onSave }: { value: any; onSave: (val: number | null
 export default function AdminPage() {
   const [raw, setRaw] = useState<any[]>([]);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("Connecting…");
+  const [status, setStatus] = useState("Idle");
   const [isLoading, setIsLoading] = useState(true);
   const [impersonation, setImpersonation] = useState<"Admin" | "LP" | "Partner">("Admin");
   const [rules, setRules] = useState<Record<string, { visibleToLP: boolean; visibleToPartners: boolean }>>({});
@@ -79,40 +79,41 @@ export default function AdminPage() {
     }).catch(() => {});
   }, []);
 
-  // initial data
+  // Polling for data (10s) + on window focus
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/data`);
-        const json = await res.json();
-        if (!active) return;
-        setRaw(json.records || json.data || []);
-      } finally {
-        if (active) setIsLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, []);
+    let killed = false;
+    let lastFetch = 0;
 
-  // SSE live updates
-  useEffect(() => {
-    const es = new EventSource(SSE_URL);
-    es.onopen = () => setStatus("Connected");
-    es.onerror = () => setStatus("Reconnecting…");
-    const handler = (evt: MessageEvent) => {
+    async function fetchData() {
       try {
-        const payload = JSON.parse(evt.data); // { tableId, record }
-        if (payload?.tableId !== MAIN_TABLE) return;
-        setRaw((prev) => {
-          const idx = prev.findIndex((r: any) => r.id === payload.record.id);
-          if (idx === -1) return [payload.record, ...prev];
-          const next = [...prev]; next[idx] = payload.record; return next;
-        });
-      } catch {}
+        setStatus("Refreshing…");
+        const res = await fetch(`${API_BASE}/api/data`, { cache: "no-store" });
+        const json = await res.json();
+        if (!killed) setRaw(json.records || json.data || []);
+        if (!killed) setStatus("Idle");
+      } catch {
+        if (!killed) setStatus("Error");
+      } finally {
+        if (!killed) setIsLoading(false);
+      }
+    }
+
+    const tick = async () => {
+      const now = Date.now();
+      if (now - lastFetch > 1000) {
+        lastFetch = now;
+        await fetchData();
+      }
     };
-    es.addEventListener("airtable.update", handler);
-    return () => { es.removeEventListener("airtable.update", handler as any); es.close(); };
+
+    fetchData();
+    const id = setInterval(tick, 10000);
+    if (typeof window !== 'undefined') window.addEventListener("focus", tick);
+    return () => {
+      killed = true;
+      clearInterval(id);
+      if (typeof window !== 'undefined') window.removeEventListener("focus", tick);
+    };
   }, []);
 
   // Save helper: PUT /api/record
@@ -248,7 +249,7 @@ export default function AdminPage() {
               <option>LP</option>
               <option>Partner</option>
             </select>
-            <span className="text-sm text-gray-500">SSE: {status}</span>
+            <span className="text-sm text-gray-500">Refresh: {status}</span>
           </div>
         </div>
       </header>
