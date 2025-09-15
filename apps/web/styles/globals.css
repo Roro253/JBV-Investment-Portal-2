@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-900;
+}
+
+.card {
+  @apply rounded-2xl border bg-white shadow-sm;
+}
+
+.chip {
+  @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs bg-white;
+}
+
