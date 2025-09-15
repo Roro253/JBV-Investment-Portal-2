@@ -10,6 +10,7 @@
 require('dotenv').config();
 const http = require('http');
 const express = require('express');
+const cors = require('cors');
 const Airtable = require('airtable');
 const { WebSocketServer } = require('ws');
 
@@ -41,14 +42,18 @@ const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
 // Express app & HTTP server
 // -------------------------
 const app = express();
-// Basic CORS for local development and the static HTML client
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Webhook-Secret');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
+// CORS for Next dev server
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(',');
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow no Origin (curl) and allowed list
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Webhook-Secret'],
+}));
+app.options('*', cors());
 app.use(express.json({ limit: '1mb' }));
 
 const server = http.createServer(app);
@@ -90,9 +95,17 @@ function broadcastSSE(event, data) {
 }
 
 app.get('/sse', (req, res) => {
+  // Explicit CORS for SSE (Safari/Chrome cross-origin)
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS[0]);
+  }
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
   const client = { id: sseClientSeq++, res };
