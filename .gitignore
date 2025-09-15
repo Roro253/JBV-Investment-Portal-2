@@ -5,4 +5,4 @@ data/visibility-rules.json
 .DS_Store
 apps/web/.next/
 apps/web/node_modules/
-
+# apps/web/.env.local  # committed intentionally per user request
