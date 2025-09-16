@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import type { Session } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "./auth-options";
 export { isAdmin } from "./auth-helpers";
 
 export async function getSession(): Promise<Session | null> {
@@ -9,13 +9,16 @@ export async function getSession(): Promise<Session | null> {
 
 export async function requireSession(options?: { redirectTo?: string | null }): Promise<Session> {
   const session = await getSession();
-  if (!session) {
-    if (options?.redirectTo === null) {
-      throw new Error("Unauthorized");
-    }
-    const destination = options?.redirectTo ?? "/auth/signin";
-    const { redirect } = await import("next/navigation");
-    redirect(destination);
+  if (session) {
+    return session;
   }
-  return session;
+
+  if (options?.redirectTo === null) {
+    throw new Error("Unauthorized");
+  }
+
+  const destination = options?.redirectTo ?? "/auth/signin";
+  const { redirect } = await import("next/navigation");
+  redirect(destination);
+  throw new Error("Redirected");
 }

@@ -1,10 +1,27 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 
 export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4 py-16">
+          <div className="w-full max-w-md space-y-4 text-center">
+            <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-blue-100" />
+            <p className="text-sm text-slate-500">Preparing secure sign-in options…</p>
+          </div>
+        </div>
+      }
+    >
+      <SignInContent />
+    </Suspense>
+  );
+}
+
+function SignInContent() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");

@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth";
+import { type Role } from "@/lib/auth-helpers";
 import { loadPartnerInvestmentRecords } from "@/lib/lp-server";
 
 export const runtime = "nodejs";
@@ -9,6 +10,7 @@ type Attachment = {
   url: string;
   size?: number;
   type?: string;
+  filename?: string;
 };
 
 function isAttachment(value: any): value is Attachment {
@@ -39,12 +41,13 @@ function resolvePeriodEnding(fields: Record<string, any>) {
 export async function GET() {
   try {
     const session = await getSession();
-    const email = session?.user?.email;
-    if (!session || !email) {
+    const user = session?.user;
+    const email = user?.email;
+    if (!session || !user || !email) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const role = (session.user.role as "admin" | "lp" | "partner" | undefined) ?? "lp";
+    const role = (user.role as Role | undefined) ?? "lp";
     const { records } = await loadPartnerInvestmentRecords(email, role);
 
     const documents: Array<{
