@@ -19,6 +19,14 @@ const LINK_MAP: Record<string, string> = {
   "Primary Contact": "Contacts",
 };
 
+const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  "primary contact": "Primary Contact",
+  "partner investment": "Partner Investment",
+  "pcap distribution report": "PCAP Distribution Report",
+  "latest pcap file": "Latest PCAP File",
+  "status (i)": "Status (I)",
+};
+
 // Optional limiter to be nice to Airtable rate limits
 const limiter = new Bottleneck({ minTime: 60 });
 
@@ -34,7 +42,13 @@ const CHUNK_SIZE = 50;
 
 function toLinkedRecord(rec: AirtableRecord): LinkedRecord {
   const fields: any = rec.fields || {};
-  const primary = fields.Name || fields.Title || Object.values(fields || {})[0];
+  const primary =
+    fields.Name ||
+    fields["Full Name"] ||
+    fields.Title ||
+    fields["Primary Contact"] ||
+    Object.values(fields || {}).find((val) => typeof val === "string") ||
+    Object.values(fields || {})[0];
   return { id: rec.id, fields, displayName: primary };
 }
 
@@ -71,6 +85,52 @@ type ExpandedRecord = {
   fields: Record<string, any>;
   _updatedTime: string | null;
 };
+
+function normalizeKey(name: string): string {
+  return name?.trim().toLowerCase() ?? "";
+}
+
+function toDisplayName(fieldName: string): string {
+  const normalized = normalizeKey(fieldName);
+  return DISPLAY_NAME_OVERRIDES[normalized] || fieldName;
+}
+
+function deriveFieldMetadata(rows: AirtableRecord[]) {
+  const seenNormalized = new Set<string>();
+  const order: string[] = [];
+  const displayNameMap: Record<string, string> = {};
+
+  const pushField = (fieldName: string) => {
+    const normalized = normalizeKey(fieldName);
+    if (!seenNormalized.has(normalized)) {
+      seenNormalized.add(normalized);
+      order.push(fieldName);
+    }
+    if (!displayNameMap[fieldName]) {
+      displayNameMap[fieldName] = toDisplayName(fieldName);
+    }
+  };
+
+  if (rows.length) {
+    const firstRawFields =
+      ((rows[0] as any)._rawJson?.fields as Record<string, any>) ||
+      ((rows[0].fields || {}) as Record<string, any>);
+    for (const key of Object.keys(firstRawFields || {})) {
+      pushField(key);
+    }
+  }
+
+  for (const row of rows) {
+    const rawFields =
+      ((row as any)._rawJson?.fields as Record<string, any>) ||
+      ((row.fields || {}) as Record<string, any>);
+    for (const key of Object.keys(rawFields || {})) {
+      pushField(key);
+    }
+  }
+
+  return { fieldOrder: order, displayNameMap };
+}
 
 async function expandRecords(rows: AirtableRecord[]): Promise<ExpandedRecord[]> {
   if (!rows.length) return [];
@@ -126,8 +186,10 @@ export async function GET() {
       .select({ ...(VIEW_ID ? { view: VIEW_ID } : {}) })
       .all();
 
+    const { fieldOrder, displayNameMap } = deriveFieldMetadata(rows as AirtableRecord[]);
     const records = await expandRecords(rows as AirtableRecord[]);
-    return Response.json({ records });
+
+    return Response.json({ records, fieldOrder, displayNameMap });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Failed" }), { status: 500 });
   }
