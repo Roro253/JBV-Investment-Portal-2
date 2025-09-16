@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 
 type Attachment = { url?: string; filename?: string; thumbnails?: any };
