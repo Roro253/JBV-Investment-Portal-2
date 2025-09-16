@@ -1,9 +1,10 @@
 "use client";
 import React, { useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
-type Rule = {
+export type Rule = {
+  id?: string;
   tableId: string;
   fieldId: string;
   visibleToLP: boolean;
@@ -112,4 +113,3 @@ export default function VisibilityPanel({ tableId, rules, onChangeRules, fields 
     </>
   );
 }
-

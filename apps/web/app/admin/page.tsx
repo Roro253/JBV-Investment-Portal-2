@@ -66,17 +66,40 @@ export default function AdminPage() {
   const [status, setStatus] = useState("Idle");
   const [isLoading, setIsLoading] = useState(true);
   const [impersonation, setImpersonation] = useState<"Admin" | "LP" | "Partner">("Admin");
-  const [rules, setRules] = useState<Record<string, { visibleToLP: boolean; visibleToPartners: boolean }>>({});
+  // Visibility rule shape used by the panel and filtering
+  type Rule = {
+    id?: string;
+    tableId: string;
+    fieldId: string;
+    visibleToLP: boolean;
+    visibleToPartners: boolean;
+    notes?: string;
+  };
+  const [rules, setRules] = useState<Record<string, Rule>>({});
 
-  // Load visibility rules
+  // Load visibility rules and normalize map by `${tableId}:${fieldId}`
   useEffect(() => {
-    fetch(`${API_BASE}/api/visibility/rules`).then(async (r) => {
-      const arr = await r.json();
-      // normalize as map by fieldId (using field name as id in this UI)
-      const map: Record<string, any> = {};
-      for (const rule of arr || []) map[`${rule.tableId}:${rule.fieldId}`] = rule;
-      setRules(map);
-    }).catch(() => {});
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/visibility/rules`, { cache: "no-store" });
+        const arr = await r.json();
+        const map: Record<string, Rule> = {};
+        for (const rec of arr || []) {
+          const rule: Rule = {
+            id: rec.id,
+            tableId: rec.tableId || MAIN_TABLE,
+            fieldId: rec.fieldId,
+            visibleToLP: !!rec.visibleToLP,
+            visibleToPartners: !!rec.visibleToPartners,
+            notes: rec.notes || "",
+          };
+          map[`${rule.tableId}:${rule.fieldId}`] = rule;
+        }
+        setRules(map);
+      } catch (e) {
+        console.error("Failed to load visibility rules", e);
+      }
+    })();
   }, []);
 
   // Polling for data (10s) + on window focus
