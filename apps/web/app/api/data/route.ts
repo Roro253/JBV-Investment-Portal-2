@@ -15,6 +15,7 @@ const LINK_MAP: Record<string, string> = {
   Partner: "Partners",
   Fund: "JBV Entities",
   "PRIMARY CONTACT": "Contacts",
+  "Primary Contact": "Contacts",
 };
 
 // Optional limiter to be nice to Airtable rate limits
@@ -53,12 +54,11 @@ async function expandRecord(rec: any) {
 
 export async function GET() {
   try {
-    const sel = base("Partner Investments").select({
-      ...(VIEW_ID ? { view: VIEW_ID } : {}),
-      pageSize: 100,
-    });
-    const page = await sel.firstPage();
-    const records = await Promise.all(page.map((r) => expandRecord(r)));
+    const rows = await base("Partner Investments")
+      .select({ ...(VIEW_ID ? { view: VIEW_ID } : {}) })
+      .all();
+
+    const records = await Promise.all(rows.map((r) => expandRecord(r)));
     return Response.json({ records });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || "Failed" }), { status: 500 });

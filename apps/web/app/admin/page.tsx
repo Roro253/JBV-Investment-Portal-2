@@ -234,7 +234,7 @@ export default function AdminPage() {
 
     if (isVisible("PRIMARY CONTACT")) cols.push({
       header: "Primary Contact",
-      accessorFn: (r) => r?.fields?.["PRIMARY CONTACT"],
+      accessorFn: (r) => r?.fields?.["PRIMARY CONTACT"] ?? r?.fields?.["Primary Contact"],
       cell: (ctx) => <ChipList value={(ctx.getValue() as any[]) || []} />,
     });
 
