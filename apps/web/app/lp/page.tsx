@@ -12,21 +12,11 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
+import { normalizeFieldKey } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
-import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
-
-interface Metrics {
-  commitmentTotal: number;
-  navTotal: number;
-  distributionsTotal: number;
-  netMoicAvg: number;
-}
-
-interface LpDataResponse {
-  records: ExpandedRecord[];
-  metrics: Metrics;
-}
+import type { RefreshStatus } from "@/hooks/usePolling";
+import { useLpData } from "./lp-data-context";
+import type { LpInvestmentRecord } from "@/types/lp";
 
 type ChartDatum = {
   label: string;
@@ -77,14 +67,17 @@ function compareSortKey(a: ChartDatum["sortKey"], b: ChartDatum["sortKey"]) {
   return a.type === "date" ? -1 : 1;
 }
 
-function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
+function findFieldKey(records: LpInvestmentRecord[], candidates: string[]) {
   if (!records.length) return undefined;
-  const normalizedCandidates = new Set(candidates.map((name) => normalizeFieldKey(name)));
-  for (const record of records) {
-    const fields = record.fields || {};
-    for (const key of Object.keys(fields)) {
-      if (normalizedCandidates.has(normalizeFieldKey(key))) {
-        return key;
+  const normalizedCandidates = candidates.map((name) => normalizeFieldKey(name));
+  for (const candidate of normalizedCandidates) {
+    if (!candidate) continue;
+    for (const record of records) {
+      const fields = record.fields || {};
+      for (const key of Object.keys(fields)) {
+        if (normalizeFieldKey(key) === candidate) {
+          return key;
+        }
       }
     }
   }
@@ -118,7 +111,7 @@ function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
   );
 }
 
-function resolveDisplayName(record: ExpandedRecord, fallback = "Unnamed Investment") {
+function resolveDisplayName(record: LpInvestmentRecord, fallback = "Unnamed Investment") {
   const fields = record.fields || {};
   const nameKey = findFieldKey([record], ["Partner Investment", "Investment", "Name", "Title"]);
   const value = nameKey ? fields[nameKey] : undefined;
@@ -126,15 +119,16 @@ function resolveDisplayName(record: ExpandedRecord, fallback = "Unnamed Investme
 }
 
 export default function LPDashboardPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
+  const { data, status, error, initialized, lastUpdated } = useLpData();
 
-  const records = useMemo(() => data?.records ?? [], [data?.records]);
+  const records = useMemo<LpInvestmentRecord[]>(() => data?.records ?? [], [data?.records]);
   const metrics = data?.metrics ?? {
     commitmentTotal: 0,
     navTotal: 0,
     distributionsTotal: 0,
     netMoicAvg: 0,
   };
+  const note = data?.note;
 
   const fieldKeys = useMemo(() => {
     return {
@@ -217,6 +211,20 @@ export default function LPDashboardPage() {
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           We were unable to refresh your portfolio data. The team has been notified, please try again shortly.
+        </div>
+      ) : null}
+
+      {initialized && note === "contact-not-found" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          We could not locate a contact record for <strong>{data?.profile.email}</strong>. Please confirm your investor email
+          with the JBV team so we can connect your portfolio data.
+        </div>
+      ) : null}
+
+      {initialized && note === "view-filtered" ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          Your assigned Airtable view currently hides all partner investments. Reach out to an administrator to review the view
+          filters if this seems unexpected.
         </div>
       ) : null}
 

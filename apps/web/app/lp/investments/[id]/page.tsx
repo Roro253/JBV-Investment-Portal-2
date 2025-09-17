@@ -12,36 +12,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
+import { normalizeFieldKey } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
 import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
-
-interface Metrics {
-  commitmentTotal: number;
-  navTotal: number;
-  distributionsTotal: number;
-  netMoicAvg: number;
-}
-
-interface LpDataResponse {
-  records: ExpandedRecord[];
-  metrics: Metrics;
-}
-
-interface DocumentItem {
-  name: string;
-  size?: number;
-  type?: string;
-  investmentId: string;
-  investmentName?: string;
-  periodEnding?: any;
-  field: string;
-  index: number;
-}
-
-interface DocumentsResponse {
-  documents: DocumentItem[];
-}
+import { useLpData } from "../../lp-data-context";
+import type { LpDocumentItem, LpDocumentsResponse, LpInvestmentRecord } from "@/types/lp";
 
 function parseNumber(value: any) {
   if (value === null || value === undefined) return null;
@@ -129,7 +104,7 @@ function formatValue(key: string, value: any) {
   return String(value);
 }
 
-function resolveInvestmentName(record: ExpandedRecord | undefined) {
+function resolveInvestmentName(record: LpInvestmentRecord | undefined) {
   if (!record) return undefined;
   const fields = record.fields || {};
   for (const key of ["Partner Investment", "Investment", "Name", "Title"]) {
@@ -146,21 +121,23 @@ export default function InvestmentDetailPage() {
   const idParam = params?.id;
   const investmentId = Array.isArray(idParam) ? idParam[0] : idParam;
 
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
-  const { data: docData } = usePolling<DocumentsResponse>("/api/lp/documents");
+  const { data, status, error, initialized, lastUpdated } = useLpData();
+  const { data: docData } = usePolling<LpDocumentsResponse>("/api/lp/documents");
+  const note = data?.note ?? docData?.note;
+  const email = data?.profile.email;
 
-  const record = useMemo(() => {
+  const record = useMemo<LpInvestmentRecord | undefined>(() => {
     return data?.records.find((item) => item.id === investmentId);
-  }, [data, investmentId]);
+  }, [data?.records, investmentId]);
 
   const investmentName = resolveInvestmentName(record) ?? "Investment";
 
-  const peerRecords = useMemo(() => {
-    if (!record) return [] as ExpandedRecord[];
+  const peerRecords = useMemo<LpInvestmentRecord[]>(() => {
+    if (!record) return [];
     const name = resolveInvestmentName(record);
     if (!name) return [record];
     return (data?.records || []).filter((item) => resolveInvestmentName(item) === name);
-  }, [data, record]);
+  }, [data?.records, record]);
 
   const fieldKeys = useMemo(() => {
     const fields = record?.fields || {};
@@ -173,8 +150,8 @@ export default function InvestmentDetailPage() {
     };
   }, [record]);
 
-  const documents = useMemo(() => {
-    if (!docData?.documents) return [] as DocumentItem[];
+  const documents = useMemo<LpDocumentItem[]>(() => {
+    if (!docData?.documents) return [];
     return docData.documents.filter((doc) => doc.investmentId === investmentId);
   }, [docData, investmentId]);
 
@@ -223,6 +200,20 @@ export default function InvestmentDetailPage() {
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           We were unable to refresh this investment. Please try again soon.
+        </div>
+      ) : null}
+
+      {initialized && note === "contact-not-found" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          We could not locate a contact record for <strong>{email}</strong>. Once your email is linked to a contact in Airtable,
+          investment details will populate here automatically.
+        </div>
+      ) : null}
+
+      {initialized && note === "view-filtered" ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          Your Airtable view currently hides this investment. Please confirm view filters with the JBV team if access is
+          expected.
         </div>
       ) : null}
 

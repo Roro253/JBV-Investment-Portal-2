@@ -1,21 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
+import { normalizeFieldKey } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber, formatPercent } from "@/lib/format";
-import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
-
-interface Metrics {
-  commitmentTotal: number;
-  navTotal: number;
-  distributionsTotal: number;
-  netMoicAvg: number;
-}
-
-interface LpDataResponse {
-  records: ExpandedRecord[];
-  metrics: Metrics;
-}
+import type { RefreshStatus } from "@/hooks/usePolling";
+import { useLpData } from "../lp-data-context";
+import type { LpInvestmentRecord } from "@/types/lp";
 
 function parseNumber(value: any) {
   if (value === null || value === undefined) return null;
@@ -135,10 +125,11 @@ function formatValue(key: string, value: any) {
 }
 
 export default function LPInvestmentsPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
+  const { data, status, error, initialized, lastUpdated } = useLpData();
   const [search, setSearch] = useState("");
 
-  const records = useMemo(() => data?.records ?? [], [data?.records]);
+  const records = useMemo<LpInvestmentRecord[]>(() => data?.records ?? [], [data?.records]);
+  const note = data?.note;
 
   const columnKeys = useMemo(() => {
     if (!records.length) return [] as string[];
@@ -235,6 +226,20 @@ export default function LPInvestmentsPage() {
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           We could not refresh the investments table. Please retry in a moment.
+        </div>
+      ) : null}
+
+      {initialized && note === "contact-not-found" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          We could not locate a contact record for <strong>{data?.profile.email}</strong>. Your holdings will populate once your
+          email is linked to a contact in Airtable.
+        </div>
+      ) : null}
+
+      {initialized && note === "view-filtered" ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          No rows are visible through the configured Airtable view. Ask an administrator to adjust the view filters if you
+          expect to see positions here.
         </div>
       ) : null}
 
