@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function SignInPage() {
   return (
@@ -23,6 +23,7 @@ export default function SignInPage() {
 
 function SignInContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -44,6 +45,11 @@ function SignInContent() {
         setEmailStatus("error");
         setErrorMessage(result.error);
       } else {
+        if (result?.ok && result.url) {
+          setEmailStatus("sent");
+          router.push(result.url);
+          return;
+        }
         setEmailStatus("sent");
       }
     } catch (err: any) {
@@ -95,10 +101,12 @@ function SignInContent() {
               disabled={!email || emailStatus === "sending"}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
-              {emailStatus === "sending" ? "Sending link…" : "Sign in with Email Link"}
+              {emailStatus === "sending" ? "Signing in…" : "Sign in with Email"}
             </button>
             {emailStatus === "sent" ? (
-              <p className="text-sm text-green-600">Check your inbox for a secure sign-in link.</p>
+              <p className="text-sm text-green-600">
+                Check your inbox for a secure sign-in link. If a link is not required, you will be redirected automatically.
+              </p>
             ) : null}
             {emailStatus === "error" && errorMessage ? (
               <p className="text-sm text-red-600">{errorMessage}</p>
