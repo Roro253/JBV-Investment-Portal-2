@@ -31,7 +31,9 @@ function SignInContent() {
   const [adminStatus, setAdminStatus] = useState<"idle" | "signing-in" | "error">("idle");
   const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
 
-  const callbackUrl = searchParams?.get("callbackUrl") || "/lp";
+  const callbackUrlParam = searchParams?.get("callbackUrl");
+  const emailCallbackUrl = callbackUrlParam || "/lp";
+  const adminCallbackUrl = callbackUrlParam || "/admin";
 
   const handleEmailSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,7 +43,7 @@ function SignInContent() {
       const result = await signIn("email", {
         email,
         redirect: false,
-        callbackUrl,
+        callbackUrl: emailCallbackUrl,
       });
 
       if (result?.error) {
@@ -76,7 +78,7 @@ function SignInContent() {
         email: adminEmail,
         password: adminPassword,
         redirect: false,
-        callbackUrl,
+        callbackUrl: adminCallbackUrl,
       });
 
       if (!result || result.error) {
@@ -91,7 +93,7 @@ function SignInContent() {
       }
 
       if (result.ok) {
-        window.location.href = callbackUrl;
+        window.location.href = adminCallbackUrl;
         return;
       }
 
@@ -117,7 +119,7 @@ function SignInContent() {
         <div className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <button
             type="button"
-            onClick={() => signIn("google", { callbackUrl })}
+            onClick={() => signIn("google", { callbackUrl: emailCallbackUrl })}
             className="w-full inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-600 hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
             Sign in with Google

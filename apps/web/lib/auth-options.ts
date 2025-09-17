@@ -136,13 +136,32 @@ export const authOptions: NextAuthOptions = {
     signIn: "/auth/signin",
   },
   callbacks: {
-    async jwt({ token }) {
-      token.role = isAdmin(token.email) ? "admin" : "lp";
+    async jwt({ token, user }) {
+      if (user?.email) {
+        token.email = user.email;
+      }
+
+      if (user && "role" in user && user.role) {
+        token.role = user.role;
+      } else if (token.email) {
+        token.role = isAdmin(token.email) ? "admin" : "lp";
+      } else if (!token.role) {
+        token.role = "lp";
+      }
+
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role ?? (isAdmin(session.user.email) ? "admin" : "lp");
+        const email = token.email ?? session.user.email ?? undefined;
+        if (email) {
+          session.user.email = email;
+        }
+
+        const resolvedRole =
+          token.role ?? (email ? (isAdmin(email) ? "admin" : "lp") : "lp");
+
+        session.user.role = resolvedRole;
       }
       return session;
     },
