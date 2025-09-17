@@ -7,6 +7,7 @@ import { getAdminEmails, isAdmin } from "./auth-helpers";
 
 function buildProviders(): NextAuthOptions["providers"] {
   const providers: NextAuthOptions["providers"] = [];
+  const adminEmails = new Set(getAdminEmails());
 
   if (process.env.EMAIL_SERVER && process.env.EMAIL_FROM) {
     providers.push(
@@ -27,7 +28,7 @@ function buildProviders(): NextAuthOptions["providers"] {
   }
 
   if (providers.length === 0) {
-    const allowedEmails = new Set(getAdminEmails());
+    const allowedEmails = new Set(adminEmails);
     const devEmails = (process.env.DEV_LOGIN_EMAILS || "")
       .split(",")
       .map((entry) => entry.trim().toLowerCase())
@@ -77,6 +78,53 @@ function buildProviders(): NextAuthOptions["providers"] {
       })
     );
   }
+
+  providers.push(
+    CredentialsProvider({
+      id: "admin-login",
+      name: "Admin Password",
+      credentials: {
+        email: {
+          label: "Email",
+          type: "email",
+          placeholder: "jb@jbv.com",
+        },
+        password: {
+          label: "Password",
+          type: "password",
+          placeholder: "Enter password",
+        },
+      },
+      async authorize(credentials) {
+        const email = credentials?.email;
+        const password = credentials?.password;
+
+        if (!email || typeof email !== "string" || !password || typeof password !== "string") {
+          return null;
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedPassword = password.trim();
+
+        if (!adminEmails.has(normalizedEmail)) {
+          return null;
+        }
+
+        const expectedPassword = process.env.ADMIN_LOGIN_PASSWORD || "admin123";
+
+        if (normalizedPassword !== expectedPassword) {
+          return null;
+        }
+
+        return {
+          id: normalizedEmail,
+          email: normalizedEmail,
+          name: "JBV Admin",
+          role: "admin",
+        };
+      },
+    })
+  );
 
   return providers;
 }
