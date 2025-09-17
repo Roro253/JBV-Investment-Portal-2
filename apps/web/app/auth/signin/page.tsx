@@ -116,8 +116,8 @@ function SignInForm() {
           <p className="text-xs text-slate-500">
             Need assistance? Contact your JBV relationship manager or email
             {" "}
-            <a className="font-medium text-blue-600 hover:underline" href="mailto:support@jbv.com">
-              support@jbv.com
+            <a className="font-medium text-blue-600 hover:underline" href="mailto:jb@JBV.com">
+              jb@JBV.com
             </a>
             .
           </p>
