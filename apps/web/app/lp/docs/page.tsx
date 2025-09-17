@@ -6,12 +6,13 @@ import { formatDate } from "@/lib/format";
 
 interface DocumentItem {
   name: string;
-  url: string;
   size?: number;
   type?: string;
   investmentId: string;
   investmentName?: string;
   periodEnding?: any;
+  field: string;
+  index: number;
 }
 
 interface DocumentsResponse {
@@ -52,25 +53,59 @@ function formatPeriod(value: any) {
   return typeof value === "string" ? value : String(value);
 }
 
+function buildPeriodKey(value: any) {
+  if (value === null || value === undefined) return "_none";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getPeriodSortValue(value: any) {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) return date.getTime();
+  return Number.NEGATIVE_INFINITY;
+}
+
 export default function DocumentsPage() {
   const { data, status, error, initialized, lastUpdated } = usePolling<DocumentsResponse>("/api/lp/documents");
 
   const grouped = useMemo(() => {
-    const sections = new Map<string, { name: string; documents: DocumentItem[] }>();
+    const sections = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        periods: Map<string, { periodEnding: any; documents: DocumentItem[] }>;
+      }
+    >();
     (data?.documents || []).forEach((doc) => {
       const key = doc.investmentId || doc.investmentName || "unassigned";
       if (!sections.has(key)) {
-        sections.set(key, { name: doc.investmentName || "Unassigned Investment", documents: [] });
+        sections.set(key, {
+          id: key,
+          name: doc.investmentName || "Unassigned Investment",
+          periods: new Map(),
+        });
       }
-      sections.get(key)!.documents.push(doc);
+      const section = sections.get(key)!;
+      const periodKey = buildPeriodKey(doc.periodEnding);
+      if (!section.periods.has(periodKey)) {
+        section.periods.set(periodKey, { periodEnding: doc.periodEnding, documents: [] });
+      }
+      section.periods.get(periodKey)!.documents.push(doc);
     });
     return Array.from(sections.values()).map((section) => ({
-      ...section,
-      documents: section.documents.slice().sort((a, b) => {
-        const aDate = a.periodEnding ? new Date(a.periodEnding).getTime() : 0;
-        const bDate = b.periodEnding ? new Date(b.periodEnding).getTime() : 0;
-        return bDate - aDate;
-      }),
+      id: section.id,
+      name: section.name,
+      periods: Array.from(section.periods.values())
+        .map((period) => ({
+          periodEnding: period.periodEnding,
+          documents: period.documents.slice(),
+        }))
+        .sort((a, b) => getPeriodSortValue(b.periodEnding) - getPeriodSortValue(a.periodEnding)),
     }));
   }, [data]);
 
@@ -99,30 +134,47 @@ export default function DocumentsPage() {
       ) : (
         <div className="space-y-6">
           {grouped.map((section) => (
-            <div key={section.name} className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <div key={section.id} className="space-y-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">{section.name}</h3>
                 <p className="text-sm text-slate-500">Latest files and partner communications.</p>
               </div>
-              <div className="space-y-3">
-                {section.documents.map((doc) => (
-                  <a
-                    key={`${doc.url}-${doc.name}`}
-                    href={doc.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm text-blue-700 transition hover:border-blue-400 hover:bg-blue-50"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-900">{doc.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {doc.periodEnding ? `Period Ending: ${formatPeriod(doc.periodEnding)}` : "Document"}
-                        {doc.size ? ` · ${(doc.size / (1024 * 1024)).toFixed(2)} MB` : ""}
+              <div className="space-y-4">
+                {section.periods.map((period) => {
+                  const label = formatPeriod(period.periodEnding);
+                  const heading = period.periodEnding ? `Period Ending: ${label}` : "General";
+                  return (
+                    <div key={`${section.id}-${buildPeriodKey(period.periodEnding)}`} className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {heading}
                       </p>
+                      <div className="space-y-3">
+                        {period.documents.map((doc) => {
+                          const downloadUrl = `/api/lp/documents/download?recordId=${encodeURIComponent(
+                            doc.investmentId
+                          )}&field=${encodeURIComponent(doc.field)}&index=${doc.index}`;
+                          const docKey = `${doc.investmentId}-${doc.field}-${doc.index}`;
+                          const sizeLabel = doc.size ? `${(doc.size / (1024 * 1024)).toFixed(2)} MB` : null;
+                          return (
+                            <a
+                              key={docKey}
+                              href={downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm text-blue-700 transition hover:border-blue-400 hover:bg-blue-50"
+                            >
+                              <div>
+                                <p className="font-medium text-slate-900">{doc.name}</p>
+                                <p className="text-xs text-slate-500">{sizeLabel ? `Size: ${sizeLabel}` : "Secure proxy download"}</p>
+                              </div>
+                              <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Download</span>
+                            </a>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Download</span>
-                  </a>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

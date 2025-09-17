@@ -156,12 +156,15 @@ function parseNumber(value: any) {
 
 function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
   if (!records.length) return undefined;
-  const normalizedCandidates = new Set(candidates.map((name) => normalizeFieldKey(name)));
-  for (const record of records) {
-    const fields = record.fields || {};
-    for (const key of Object.keys(fields)) {
-      if (normalizedCandidates.has(normalizeFieldKey(key))) {
-        return key;
+  const normalizedCandidates = candidates.map((name) => normalizeFieldKey(name));
+  for (const normalizedCandidate of normalizedCandidates) {
+    if (!normalizedCandidate) continue;
+    for (const record of records) {
+      const fields = record.fields || {};
+      for (const key of Object.keys(fields)) {
+        if (normalizeFieldKey(key) === normalizedCandidate) {
+          return key;
+        }
       }
     }
   }
@@ -170,7 +173,8 @@ function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
 
 export function computeMetrics(records: ExpandedRecord[]) {
   const commitmentKey = findFieldKey(records, ["Commitment"]);
-  const navKey = findFieldKey(records, ["Total NAV", "Current NAV"]);
+  const totalNavKey = findFieldKey(records, ["Total NAV"]);
+  const currentNavKey = findFieldKey(records, ["Current NAV"]);
   const distributionsKey = findFieldKey(records, ["Distributions"]);
   const netMoicKey = findFieldKey(records, ["Net MOIC", "MOIC"]);
 
@@ -188,8 +192,11 @@ export function computeMetrics(records: ExpandedRecord[]) {
       if (value !== null) commitmentTotal += value;
     }
 
-    if (navKey && Object.prototype.hasOwnProperty.call(fields, navKey)) {
-      const value = parseNumber(fields[navKey]);
+    if (totalNavKey && Object.prototype.hasOwnProperty.call(fields, totalNavKey)) {
+      const value = parseNumber(fields[totalNavKey]);
+      if (value !== null) navTotal += value;
+    } else if (currentNavKey && Object.prototype.hasOwnProperty.call(fields, currentNavKey)) {
+      const value = parseNumber(fields[currentNavKey]);
       if (value !== null) navTotal += value;
     }
 

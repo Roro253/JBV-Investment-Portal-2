@@ -3,6 +3,7 @@ import Bottleneck from "bottleneck";
 
 export const PARTNER_INVESTMENTS_TABLE = "Partner Investments";
 export const VISIBILITY_RULES_TABLE = "VisibilityRules";
+export const CONTACTS_TABLE = "Contacts";
 
 export const VIEW_ID = process.env.AIRTABLE_VIEW_ID || undefined;
 
@@ -19,6 +20,8 @@ const LINK_MAP: Record<string, string> = {
 };
 
 const limiter = new Bottleneck({ minTime: 60 });
+
+export const airtableLimiter = limiter;
 
 export type AirtableRecord = Airtable.Record<any>;
 
