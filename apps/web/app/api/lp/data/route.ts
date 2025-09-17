@@ -1,9 +1,25 @@
 import { getSession } from "@/lib/auth";
-import { type Role } from "@/lib/auth-helpers";
-import { computeMetrics, loadPartnerInvestmentRecords } from "@/lib/lp-server";
+import type { Role } from "@/lib/auth-helpers";
+import {
+  computeMetrics,
+  contactDisplayName,
+  loadLpInvestmentsForEmail,
+  type ContactRecord,
+} from "@/lib/lp-server";
+import type { LpDataResponse } from "@/types/lp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function resolveProfileName(contacts: ContactRecord[], email: string) {
+  for (const contact of contacts) {
+    const name = contactDisplayName(contact);
+    if (name && name !== "Investor") {
+      return name;
+    }
+  }
+  return email;
+}
 
 export async function GET() {
   try {
@@ -15,11 +31,24 @@ export async function GET() {
     }
 
     const role = (user.role as Role | undefined) ?? "lp";
-    const { records } = await loadPartnerInvestmentRecords(email, role);
+    const { contacts, records, note } = await loadLpInvestmentsForEmail(email, role);
     const metrics = computeMetrics(records);
 
-    return Response.json({ records, metrics });
+    const profileName = resolveProfileName(contacts, email);
+
+    const payload: LpDataResponse = {
+      profile: { name: profileName, email },
+      records,
+      metrics,
+    };
+
+    if (note) {
+      payload.note = note;
+    }
+
+    return Response.json(payload);
   } catch (error: any) {
+    console.error("[lp-data] Failed to load LP data", error);
     return Response.json({ error: error?.message || "Failed to load data" }, { status: 500 });
   }
 }

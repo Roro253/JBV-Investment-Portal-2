@@ -3,21 +3,8 @@
 import { useMemo } from "react";
 import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
 import { formatDate } from "@/lib/format";
-
-interface DocumentItem {
-  name: string;
-  size?: number;
-  type?: string;
-  investmentId: string;
-  investmentName?: string;
-  periodEnding?: any;
-  field: string;
-  index: number;
-}
-
-interface DocumentsResponse {
-  documents: DocumentItem[];
-}
+import { useLpData } from "../lp-data-context";
+import type { LpDocumentItem, LpDocumentsResponse } from "@/types/lp";
 
 function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
   const label =
@@ -70,7 +57,10 @@ function getPeriodSortValue(value: any) {
 }
 
 export default function DocumentsPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<DocumentsResponse>("/api/lp/documents");
+  const { data: overviewData } = useLpData();
+  const { data, status, error, initialized, lastUpdated } = usePolling<LpDocumentsResponse>("/api/lp/documents");
+  const note = data?.note ?? overviewData?.note;
+  const email = overviewData?.profile.email;
 
   const grouped = useMemo(() => {
     const sections = new Map<
@@ -78,7 +68,7 @@ export default function DocumentsPage() {
       {
         id: string;
         name: string;
-        periods: Map<string, { periodEnding: any; documents: DocumentItem[] }>;
+        periods: Map<string, { periodEnding: any; documents: LpDocumentItem[] }>;
       }
     >();
     (data?.documents || []).forEach((doc) => {
@@ -122,6 +112,20 @@ export default function DocumentsPage() {
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           We were unable to refresh your document library. Please retry in a moment.
+        </div>
+      ) : null}
+
+      {initialized && note === "contact-not-found" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          We could not locate a contact record for <strong>{email}</strong>. Once your email is linked to a contact in Airtable,
+          shared documents will appear automatically.
+        </div>
+      ) : null}
+
+      {initialized && note === "view-filtered" ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          The configured Airtable view currently hides all partner investment documents. Please confirm view filters with an
+          administrator if you expect files here.
         </div>
       ) : null}
 
