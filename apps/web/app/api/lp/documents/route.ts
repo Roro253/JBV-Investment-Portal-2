@@ -1,11 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { type Role } from "@/lib/auth-helpers";
-import {
-  applyVisibility,
-  expandLinked,
-  findContactsByEmail,
-  getInvestmentsForContactIds,
-} from "@/lib/lp-server";
+import { loadLpInvestmentRecords } from "@/lib/lp-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,32 +67,10 @@ export async function GET() {
     }
 
     const role = (user.role as Role | undefined) ?? "lp";
-    const contacts = await findContactsByEmail(email);
-    const contactIds = contacts.map((c) => c.id);
-
-    let note: DocumentsResponse["note"];
-    if (!contactIds.length) {
-      note = "contact-not-found";
-      const payload: DocumentsResponse = { documents: [], note };
-      return Response.json(payload);
-    }
-
-    const investments = await getInvestmentsForContactIds(contactIds, VIEW_ID);
-    if (!investments.length && VIEW_ID) {
-      note = "view-filtered";
-    }
-
-    const expanded = await Promise.all(investments.map((record) => expandLinked(record)));
-    const visible = await Promise.all(
-      expanded.map(async (record) => ({
-        ...record,
-        fields: await applyVisibility(record.fields, role),
-      }))
-    );
-
+    const { records, note } = await loadLpInvestmentRecords(email, role, VIEW_ID);
     const documents: DocumentsResponse["documents"] = [];
 
-    for (const record of visible) {
+    for (const record of records) {
       const fields = record.fields || {};
       const investmentName = resolveInvestmentName(fields);
       const periodEnding = resolvePeriodEnding(fields);

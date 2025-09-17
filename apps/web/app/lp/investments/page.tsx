@@ -5,11 +5,19 @@ import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber, formatPercent } from "@/lib/format";
 import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
 
+interface MetricAvailability {
+  commitment: boolean;
+  nav: boolean;
+  distributions: boolean;
+  netMoic: boolean;
+}
+
 interface Metrics {
   commitmentTotal: number;
   navTotal: number;
   distributionsTotal: number;
   netMoicAvg: number;
+  availability: MetricAvailability;
 }
 
 interface Profile {
