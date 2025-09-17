@@ -8,44 +8,71 @@ import {
   type AirtableRecord,
   type ExpandedRecord,
 } from "@/lib/airtable";
-import type { Role } from "@/lib/auth-helpers";
 
-const EMAIL_FORMULA_BUILDERS: ((email: string) => string)[] = [
-  (email) => `FIND(LOWER('${email}'), LOWER({PrimaryContactEmailCSV}))`,
-  (email) => `FIND(LOWER('${email}'), LOWER({Primary Contact Email}))`,
-  (email) => `FIND(LOWER('${email}'), LOWER({PRIMARY CONTACT Email}))`,
-  (email) => `LOWER({Primary Contact Email})='${email}'`,
-  (email) => `LOWER({PRIMARY CONTACT Email})='${email}'`,
+const EMAIL_FILTER_STRATEGIES = [
+  {
+    id: "primaryContactCsv",
+    build: (email: string) =>
+      `FIND(LOWER('${escapeFormulaValue(email)}'), LOWER({PrimaryContactEmailCSV})) > 0`,
+  },
+  {
+    id: "primaryContactEmail",
+    build: (email: string) =>
+      `LOWER({Primary Contact Email})='${escapeFormulaValue(email)}'`,
+  },
+  {
+    id: "primaryContactCaps",
+    build: (email: string) =>
+      `LOWER({PRIMARY CONTACT Email})='${escapeFormulaValue(email)}'`,
+  },
 ];
 
+const VISIBILITY_CACHE_TTL_MS = 60 * 1000;
+
+type VisibilityCacheEntry = {
+  hiddenFieldsForLp: Set<string>;
+  hiddenNormalizedForLp: Set<string>;
+};
+
+type VisibilityCache = {
+  expiresAt: number;
+  byTable: Map<string, VisibilityCacheEntry>;
+};
+
+let cachedFilterStrategy: (typeof EMAIL_FILTER_STRATEGIES)[number] | null = null;
+let visibilityCache: VisibilityCache | null = null;
+
 function escapeFormulaValue(value: string) {
-  return value.replace(/'/g, "''");
+  return value.replace(/'/g, "\\'");
 }
 
-function isUnknownFieldError(err: any) {
-  const code = err?.error || err?.code;
-  if (code === "INVALID_REQUEST_UNKNOWN_FIELD_NAME") return true;
-  const message = (err?.message || "") as string;
-  return typeof message === "string" && message.toLowerCase().includes("unknown field name");
+function normalizeIdentifier(value: string) {
+  return value.trim().toLowerCase();
 }
 
-async function fetchRowsForEmail(email: string) {
-  const safeEmail = escapeFormulaValue(email.trim().toLowerCase());
-  if (!safeEmail) {
-    return [] as AirtableRecord[];
+function isUnknownFieldError(error: any) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  const errorString = typeof error?.error === "string" ? error.error : "";
+  return /unknown field name/i.test(message) || /unknown field name/i.test(errorString);
+}
+
+async function resolveFilterStrategy(email: string) {
+  if (cachedFilterStrategy) {
+    return cachedFilterStrategy;
   }
 
-  for (const builder of EMAIL_FORMULA_BUILDERS) {
-    const formula = builder(safeEmail);
+  for (const strategy of EMAIL_FILTER_STRATEGIES) {
     try {
-      const records = await base(PARTNER_INVESTMENTS_TABLE)
+      await base(PARTNER_INVESTMENTS_TABLE)
         .select({
-          filterByFormula: formula,
+          filterByFormula: strategy.build(email),
+          maxRecords: 1,
           ...(VIEW_ID ? { view: VIEW_ID } : {}),
         })
-        .all();
-      return records as AirtableRecord[];
-    } catch (error: any) {
+        .firstPage();
+      cachedFilterStrategy = strategy;
+      return strategy;
+    } catch (error) {
       if (isUnknownFieldError(error)) {
         continue;
       }
@@ -53,98 +80,14 @@ async function fetchRowsForEmail(email: string) {
     }
   }
 
-  // If every formula failed due to missing fields, return an empty list.
-  return [] as AirtableRecord[];
+  const fallback = EMAIL_FILTER_STRATEGIES[EMAIL_FILTER_STRATEGIES.length - 1];
+  cachedFilterStrategy = fallback;
+  return fallback;
 }
 
-type VisibilityContext = {
-  role: Role;
-  allowedFields: Set<string>;
-  allowedNormalized: Set<string>;
-  ruleCount: number;
-};
-
-async function resolveVisibility(role: Role): Promise<VisibilityContext | null> {
-  if (role === "admin") {
-    return null;
-  }
-
-  const records = (await base(VISIBILITY_RULES_TABLE)
-    .select({ filterByFormula: "{tableId}='Partner Investments'" })
-    .all()) as AirtableRecord[];
-
-  const allowedFields = new Set<string>();
-  const allowedNormalized = new Set<string>();
-
-  for (const record of records) {
-    const fields = (record.fields || {}) as Record<string, any>;
-    const fieldId = fields.fieldId as string | undefined;
-    if (!fieldId) continue;
-    const visible = role === "lp" ? fields.visibleToLP === true : fields.visibleToPartners === true;
-    if (visible) {
-      allowedFields.add(fieldId);
-      const normalized = normalizeFieldKey(fieldId);
-      if (normalized) allowedNormalized.add(normalized);
-    }
-  }
-
-  const ruleCount = records.length;
-
-  if (ruleCount === 0) {
-    return null;
-  }
-
-  return {
-    role,
-    allowedFields,
-    allowedNormalized,
-    ruleCount,
-  };
-}
-
-function filterFields(
-  fields: Record<string, any>,
-  visibility: VisibilityContext | null
-): Record<string, any> {
-  if (!visibility) {
-    return { ...fields };
-  }
-
-  const { allowedFields, allowedNormalized, ruleCount } = visibility;
-  if (ruleCount === 0) {
-    return { ...fields };
-  }
-
-  const filtered: Record<string, any> = {};
-
-  for (const [key, value] of Object.entries(fields)) {
-    const normalized = normalizeFieldKey(key);
-    if (allowedFields.has(key) || allowedNormalized.has(normalized)) {
-      filtered[key] = value;
-    }
-  }
-
-  return filtered;
-}
-
-export async function loadPartnerInvestmentRecords(email: string, role: Role) {
-  const rows = await fetchRowsForEmail(email);
-  const visibility = await resolveVisibility(role);
-  const expanded = await expandPartnerInvestmentRecords(rows);
-
-  const filtered = expanded.map((record) => ({
-    ...record,
-    fields: filterFields((record.fields || {}) as Record<string, any>, visibility),
-  }));
-
-  return { records: filtered, visibility };
-}
-
-function parseNumber(value: any) {
+function toNumber(value: any): number | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") {
     const cleaned = value.replace(/[^0-9.-]+/g, "");
     if (!cleaned) return null;
@@ -154,65 +97,261 @@ function parseNumber(value: any) {
   return null;
 }
 
-function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
-  if (!records.length) return undefined;
-  const normalizedCandidates = new Set(candidates.map((name) => normalizeFieldKey(name)));
-  for (const record of records) {
-    const fields = record.fields || {};
-    for (const key of Object.keys(fields)) {
-      if (normalizedCandidates.has(normalizeFieldKey(key))) {
-        return key;
-      }
+function selectFieldValue(fields: Record<string, any>, normalized: string) {
+  for (const [key, value] of Object.entries(fields)) {
+    if (normalizeFieldKey(key) === normalized) {
+      return value;
     }
   }
   return undefined;
 }
 
-export function computeMetrics(records: ExpandedRecord[]) {
-  const commitmentKey = findFieldKey(records, ["Commitment"]);
-  const navKey = findFieldKey(records, ["Total NAV", "Current NAV"]);
-  const distributionsKey = findFieldKey(records, ["Distributions"]);
-  const netMoicKey = findFieldKey(records, ["Net MOIC", "MOIC"]);
+async function loadVisibilityCache(): Promise<VisibilityCache> {
+  const now = Date.now();
+  if (visibilityCache && visibilityCache.expiresAt > now) {
+    return visibilityCache;
+  }
 
-  let commitmentTotal = 0;
-  let navTotal = 0;
-  let distributionsTotal = 0;
-  let netMoicSum = 0;
-  let netMoicCount = 0;
+  const records = await base(VISIBILITY_RULES_TABLE)
+    .select({ pageSize: 100 })
+    .all();
+
+  const byTable = new Map<string, VisibilityCacheEntry>();
+  const partnerTableKey = normalizeIdentifier(PARTNER_INVESTMENTS_TABLE);
 
   for (const record of records) {
-    const fields = record.fields || {};
+    const fields = (record.fields || {}) as Record<string, any>;
+    const tableId = String(fields.tableId ?? "").trim();
+    if (!tableId) continue;
 
-    if (commitmentKey && Object.prototype.hasOwnProperty.call(fields, commitmentKey)) {
-      const value = parseNumber(fields[commitmentKey]);
-      if (value !== null) commitmentTotal += value;
+    const normalizedTable = normalizeIdentifier(tableId);
+    if (normalizedTable !== partnerTableKey && !normalizedTable.startsWith("tbl")) {
+      continue;
     }
 
-    if (navKey && Object.prototype.hasOwnProperty.call(fields, navKey)) {
-      const value = parseNumber(fields[navKey]);
-      if (value !== null) navTotal += value;
+    const cacheKey = normalizedTable.startsWith("tbl") ? normalizedTable : partnerTableKey;
+    let entry = byTable.get(cacheKey);
+    if (!entry) {
+      entry = { hiddenFieldsForLp: new Set(), hiddenNormalizedForLp: new Set() };
+      byTable.set(cacheKey, entry);
+    }
+    if (cacheKey !== partnerTableKey && !byTable.has(partnerTableKey)) {
+      byTable.set(partnerTableKey, entry);
     }
 
-    if (distributionsKey && Object.prototype.hasOwnProperty.call(fields, distributionsKey)) {
-      const value = parseNumber(fields[distributionsKey]);
-      if (value !== null) distributionsTotal += value;
-    }
-
-    if (netMoicKey && Object.prototype.hasOwnProperty.call(fields, netMoicKey)) {
-      const value = parseNumber(fields[netMoicKey]);
-      if (value !== null) {
-        netMoicSum += value;
-        netMoicCount += 1;
+    if (fields.visibleToLP === false) {
+      const fieldId = String(fields.fieldId ?? "").trim();
+      if (fieldId) {
+        entry.hiddenFieldsForLp.add(fieldId);
+        entry.hiddenNormalizedForLp.add(normalizeFieldKey(fieldId));
       }
     }
   }
 
-  const netMoicAvg = netMoicCount > 0 ? netMoicSum / netMoicCount : 0;
+  if (!byTable.has(partnerTableKey)) {
+    byTable.set(partnerTableKey, { hiddenFieldsForLp: new Set(), hiddenNormalizedForLp: new Set() });
+  }
+
+  visibilityCache = {
+    expiresAt: now + VISIBILITY_CACHE_TTL_MS,
+    byTable,
+  };
+
+  return visibilityCache;
+}
+
+export async function filterFormulaForEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) {
+    throw new Error("Email is required to build filter formula.");
+  }
+  const strategy = await resolveFilterStrategy(normalized);
+  return strategy.build(normalized);
+}
+
+export async function expandLinked(record: AirtableRecord): Promise<ExpandedRecord> {
+  const [expanded] = await expandPartnerInvestmentRecords([record]);
+  return expanded;
+}
+
+export async function applyVisibility(records: ExpandedRecord[], role: "lp" | "admin" | "partner") {
+  if (role !== "lp") {
+    return records;
+  }
+
+  const cache = await loadVisibilityCache();
+  const partnerTableKey = normalizeIdentifier(PARTNER_INVESTMENTS_TABLE);
+  const entry = cache.byTable.get(partnerTableKey) ?? Array.from(cache.byTable.values())[0];
+  if (!entry) {
+    return records;
+  }
+
+  return records.map((record) => {
+    const filteredFields: Record<string, any> = {};
+    const originalFields = record.fields || {};
+    for (const [key, value] of Object.entries(originalFields)) {
+      const normalizedKey = normalizeFieldKey(key);
+      if (entry.hiddenFieldsForLp.has(key) || entry.hiddenNormalizedForLp.has(normalizedKey)) {
+        continue;
+      }
+      filteredFields[key] = value;
+    }
+    return { ...record, fields: filteredFields };
+  });
+}
+
+export function computeMetrics(records: ExpandedRecord[]) {
+  let commitmentTotal = 0;
+  let navTotal = 0;
+  let distributionsTotal = 0;
+  let moicSum = 0;
+  let moicCount = 0;
+
+  for (const record of records) {
+    const fields = record.fields || {};
+    const commitment = toNumber(selectFieldValue(fields, "commitment"));
+    if (commitment !== null) {
+      commitmentTotal += commitment;
+    }
+
+    const totalNav = toNumber(selectFieldValue(fields, "total nav"));
+    const currentNav = toNumber(selectFieldValue(fields, "current nav"));
+    if (totalNav !== null) {
+      navTotal += totalNav;
+    } else if (currentNav !== null) {
+      navTotal += currentNav;
+    }
+
+    const distributions = toNumber(selectFieldValue(fields, "distributions"));
+    if (distributions !== null) {
+      distributionsTotal += distributions;
+    }
+
+    const netMoic = toNumber(selectFieldValue(fields, "net moic")) ?? toNumber(selectFieldValue(fields, "moic"));
+    if (netMoic !== null) {
+      moicSum += netMoic;
+      moicCount += 1;
+    }
+  }
 
   return {
     commitmentTotal,
     navTotal,
     distributionsTotal,
-    netMoicAvg,
+    netMoicAvg: moicCount ? moicSum / moicCount : 0,
   };
+}
+
+export async function fetchPartnerInvestmentsForEmail(email: string) {
+  const formula = await filterFormulaForEmail(email);
+  const rows = (await base(PARTNER_INVESTMENTS_TABLE)
+    .select({
+      filterByFormula: formula,
+      ...(VIEW_ID ? { view: VIEW_ID } : {}),
+    })
+    .all()) as Airtable.Record<any>[];
+
+  const expanded = await expandPartnerInvestmentRecords(rows as AirtableRecord[]);
+  const visible = await applyVisibility(expanded, "lp");
+  return { records: visible, rawRecords: expanded, formula };
+}
+
+export async function fetchPartnerInvestmentRecordById(
+  recordId: string,
+  email: string,
+  role: "lp" | "admin" | "partner" = "lp"
+): Promise<ExpandedRecord | null> {
+  const normalizedId = recordId.trim();
+  if (!normalizedId) return null;
+  const formula = await filterFormulaForEmail(email);
+  const recordFilter = `AND(RECORD_ID()='${escapeFormulaValue(normalizedId)}', ${formula})`;
+  const rows = (await base(PARTNER_INVESTMENTS_TABLE)
+    .select({
+      filterByFormula: recordFilter,
+      maxRecords: 1,
+      ...(VIEW_ID ? { view: VIEW_ID } : {}),
+    })
+    .all()) as Airtable.Record<any>[];
+  if (!rows.length) {
+    return null;
+  }
+  const [expanded] = await expandPartnerInvestmentRecords(rows as AirtableRecord[]);
+  const [visible] = await applyVisibility([expanded], role);
+  return visible ?? null;
+}
+
+export type DocumentsResult = {
+  records: ExpandedRecord[];
+  documents: Array<{
+    recordId: string;
+    field: string;
+    index: number;
+    name: string;
+    type?: string;
+    size?: number;
+    url: string;
+    investmentName: string;
+    periodEnding?: any;
+  }>;
+};
+
+export function buildDocumentList(records: ExpandedRecord[]): DocumentsResult["documents"] {
+  const documents: DocumentsResult["documents"] = [];
+  const periodFieldCandidates = ["period ending", "period", "as of date", "date"];
+
+  for (const record of records) {
+    const fields = record.fields || {};
+    const investmentName = inferInvestmentName(record);
+    const periodField = findFirstMatchingField(fields, periodFieldCandidates);
+    const periodEnding = periodField ? fields[periodField] : undefined;
+
+    for (const [fieldName, value] of Object.entries(fields)) {
+      if (!Array.isArray(value) || !value.length) continue;
+      if (!value[0] || typeof value[0] !== "object" || !("url" in value[0])) continue;
+
+      value.forEach((attachment: any, index: number) => {
+        documents.push({
+          recordId: record.id,
+          field: fieldName,
+          index,
+          name: attachment.name || attachment.filename || fieldName,
+          type: attachment.type,
+          size: attachment.size,
+          url: attachment.url,
+          investmentName,
+          periodEnding,
+        });
+      });
+    }
+  }
+
+  return documents;
+}
+
+function findFirstMatchingField(fields: Record<string, any>, candidates: string[]) {
+  for (const [key] of Object.entries(fields)) {
+    const normalized = normalizeFieldKey(key);
+    if (candidates.includes(normalized)) {
+      return key;
+    }
+  }
+  return undefined;
+}
+
+function inferInvestmentName(record: ExpandedRecord) {
+  const fields = record.fields || {};
+  for (const key of [
+    "Partner Investment",
+    "Investment",
+    "Name",
+    "Title",
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      const value = fields[key];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+  }
+  return "Investment";
 }
