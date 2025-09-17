@@ -26,6 +26,10 @@ function SignInContent() {
   const [email, setEmail] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [adminEmail, setAdminEmail] = useState("jb@jbv.com");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminStatus, setAdminStatus] = useState<"idle" | "signing-in" | "error">("idle");
+  const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
 
   const callbackUrl = searchParams?.get("callbackUrl") || "/lp";
 
@@ -59,6 +63,43 @@ function SignInContent() {
     } catch (err: any) {
       setEmailStatus("error");
       setErrorMessage(err?.message || "Failed to send sign-in link.");
+    }
+  };
+
+  const handleAdminSignIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAdminStatus("signing-in");
+    setAdminErrorMessage(null);
+
+    try {
+      const result = await signIn("admin-login", {
+        email: adminEmail,
+        password: adminPassword,
+        redirect: false,
+        callbackUrl,
+      });
+
+      if (!result || result.error) {
+        setAdminStatus("error");
+        setAdminErrorMessage("Invalid admin email or password.");
+        return;
+      }
+
+      if (result.url) {
+        window.location.href = result.url;
+        return;
+      }
+
+      if (result.ok) {
+        window.location.href = callbackUrl;
+        return;
+      }
+
+      setAdminStatus("error");
+      setAdminErrorMessage("Unable to sign in with admin credentials.");
+    } catch (err: any) {
+      setAdminStatus("error");
+      setAdminErrorMessage(err?.message || "Unable to sign in with admin credentials.");
     }
   };
 
@@ -113,6 +154,53 @@ function SignInContent() {
             {emailStatus === "error" && errorMessage ? (
               <p className="text-sm text-red-600">{errorMessage}</p>
             ) : null}
+          </form>
+
+          <div className="relative text-center text-xs uppercase tracking-wide text-slate-400">
+            <span className="bg-white px-2">admin access</span>
+            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200" aria-hidden="true" />
+          </div>
+
+          <form onSubmit={handleAdminSignIn} className="space-y-3 pt-1">
+            <div>
+              <label className="block text-sm font-medium text-slate-700" htmlFor="admin-email">
+                Admin email
+              </label>
+              <input
+                id="admin-email"
+                type="email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                autoComplete="email"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700" htmlFor="admin-password">
+                Password
+              </label>
+              <input
+                id="admin-password"
+                type="password"
+                value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                autoComplete="current-password"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!adminEmail || !adminPassword || adminStatus === "signing-in"}
+              className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-slate-400 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            >
+              {adminStatus === "signing-in" ? "Signing in…" : "Sign in as Admin"}
+            </button>
+            {adminStatus === "error" && adminErrorMessage ? (
+              <p className="text-sm text-red-600">{adminErrorMessage}</p>
+            ) : null}
+            <p className="text-xs text-slate-500">
+              Admin access is limited to authorized JBV team members.
+            </p>
           </form>
         </div>
       </div>
