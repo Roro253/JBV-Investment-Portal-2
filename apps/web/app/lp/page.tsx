@@ -16,11 +16,19 @@ import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
 import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
 
+interface MetricAvailability {
+  commitment: boolean;
+  nav: boolean;
+  distributions: boolean;
+  netMoic: boolean;
+}
+
 interface Metrics {
   commitmentTotal: number;
   navTotal: number;
   distributionsTotal: number;
   netMoicAvg: number;
+  availability: MetricAvailability;
 }
 
 interface Profile {
@@ -144,6 +152,12 @@ export default function LPDashboardPage() {
     navTotal: 0,
     distributionsTotal: 0,
     netMoicAvg: 0,
+    availability: {
+      commitment: false,
+      nav: false,
+      distributions: false,
+      netMoic: false,
+    },
   };
   const note = data?.note;
 
@@ -234,6 +248,12 @@ export default function LPDashboardPage() {
   }, [records]);
 
   const navKey = fieldKeys.totalNav ?? fieldKeys.currentNav;
+  const metricAvailability = metrics.availability ?? {
+    commitment: false,
+    nav: false,
+    distributions: false,
+    netMoic: false,
+  };
 
   return (
     <div className="space-y-8">
@@ -271,23 +291,35 @@ export default function LPDashboardPage() {
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm font-medium text-slate-500">Total Commitment</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.commitmentTotal)}
+              {metricAvailability.commitment ? formatCurrencyUSD(metrics.commitmentTotal) : "—"}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Capital committed across all vehicles.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {metricAvailability.commitment
+                ? "Capital committed across all vehicles."
+                : "Visibility disabled by your administrator."}
+            </p>
           </div>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm font-medium text-slate-500">Total Distributions</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.distributionsTotal)}
+              {metricAvailability.distributions ? formatCurrencyUSD(metrics.distributionsTotal) : "—"}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Realized capital returned to date.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {metricAvailability.distributions
+                ? "Realized capital returned to date."
+                : "Visibility disabled by your administrator."}
+            </p>
           </div>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm font-medium text-slate-500">Total NAV</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.navTotal)}
+              {metricAvailability.nav ? formatCurrencyUSD(metrics.navTotal) : "—"}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Net asset value across current holdings.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {metricAvailability.nav
+                ? "Net asset value across current holdings."
+                : "Visibility disabled by your administrator."}
+            </p>
           </div>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <p className="flex items-center gap-2 text-sm font-medium text-slate-500">
@@ -297,9 +329,17 @@ export default function LPDashboardPage() {
               </span>
             </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {metrics.netMoicAvg ? `${formatNumber(metrics.netMoicAvg, 2)}x` : "—"}
+              {metricAvailability.netMoic
+                ? metrics.netMoicAvg
+                  ? `${formatNumber(metrics.netMoicAvg, 2)}x`
+                  : "—"
+                : "—"}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Average multiple across realized and unrealized positions.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {metricAvailability.netMoic
+                ? "Average multiple across realized and unrealized positions."
+                : "Visibility disabled by your administrator."}
+            </p>
           </div>
         </div>
       )}

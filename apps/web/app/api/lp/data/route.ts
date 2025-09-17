@@ -1,13 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { type Role } from "@/lib/auth-helpers";
-import {
-  applyVisibility,
-  computeMetrics,
-  contactDisplayName,
-  expandLinked,
-  findContactsByEmail,
-  getInvestmentsForContactIds,
-} from "@/lib/lp-server";
+import { computeMetrics, contactDisplayName, loadLpInvestmentRecords } from "@/lib/lp-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,36 +17,14 @@ export async function GET() {
     }
 
     const role = (user.role as Role | undefined) ?? "lp";
-    const contacts = await findContactsByEmail(email);
-    const contactIds = contacts.map((c) => c.id);
+    const { contacts, records, note } = await loadLpInvestmentRecords(email, role, VIEW_ID);
 
-    let note: string | undefined;
-    if (!contactIds.length) {
-      note = "contact-not-found";
-    }
-
-    let investments = [] as Awaited<ReturnType<typeof getInvestmentsForContactIds>>;
-    if (contactIds.length) {
-      investments = await getInvestmentsForContactIds(contactIds, VIEW_ID);
-      if (!investments.length && VIEW_ID) {
-        note = "view-filtered";
-      }
-    }
-
-    const expanded = await Promise.all(investments.map((record) => expandLinked(record)));
-    const visible = await Promise.all(
-      expanded.map(async (record) => ({
-        ...record,
-        fields: await applyVisibility(record.fields, role),
-      }))
-    );
-
-    const metrics = computeMetrics(visible);
+    const metrics = computeMetrics(records);
     const profileName = contacts.length ? contactDisplayName(contacts[0]) : email;
 
     return Response.json({
       profile: { name: profileName, email },
-      records: visible,
+      records,
       metrics,
       note,
     });

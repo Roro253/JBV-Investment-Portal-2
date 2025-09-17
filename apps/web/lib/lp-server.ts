@@ -1,6 +1,7 @@
 import Airtable from "airtable";
 import Bottleneck from "bottleneck";
 import type { Role } from "@/lib/auth-helpers";
+import { normalizeFieldKey } from "@/lib/airtable-shared";
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY! }).base(
   process.env.AIRTABLE_BASE_ID!
@@ -199,19 +200,48 @@ export function computeMetrics(rows: Array<{ fields: any }>) {
   let moicSum = 0;
   let moicCount = 0;
 
+  let hasCommitment = false;
+  let hasNav = false;
+  let hasDistributions = false;
+  let hasMoic = false;
+
   for (const r of rows) {
-    const f = r.fields || {};
-    commitmentTotal += num(f["Commitment"]);
-    distributionsTotal += num(f["Distributions"]);
+    const rawFields = r.fields || {};
+    const normalizedFields: Record<string, any> = {};
+    for (const [key, value] of Object.entries(rawFields)) {
+      normalizedFields[normalizeFieldKey(key)] = value;
+    }
 
-    const totalNav = num(f["Total NAV"]);
-    const currentNav = num(f["Current NAV"]);
-    navTotal += totalNav > 0 ? totalNav : currentNav;
+    if (Object.prototype.hasOwnProperty.call(normalizedFields, "commitment")) {
+      hasCommitment = true;
+      commitmentTotal += num(normalizedFields["commitment"]);
+    }
 
-    const moic = num(f["Net MOIC"]);
-    if (moic > 0) {
-      moicSum += moic;
-      moicCount += 1;
+    if (Object.prototype.hasOwnProperty.call(normalizedFields, "distributions")) {
+      hasDistributions = true;
+      distributionsTotal += num(normalizedFields["distributions"]);
+    }
+
+    const totalNavValue = normalizedFields["total nav"];
+    const currentNavValue = normalizedFields["current nav"];
+    if (totalNavValue !== undefined || currentNavValue !== undefined) {
+      hasNav = true;
+      const totalNav = totalNavValue !== undefined ? num(totalNavValue) : 0;
+      const currentNav = currentNavValue !== undefined ? num(currentNavValue) : 0;
+      navTotal += totalNav > 0 ? totalNav : currentNav;
+    }
+
+    const moicValue =
+      normalizedFields["net moic"] !== undefined
+        ? normalizedFields["net moic"]
+        : normalizedFields["moic"];
+    if (moicValue !== undefined) {
+      hasMoic = true;
+      const moic = num(moicValue);
+      if (moic > 0) {
+        moicSum += moic;
+        moicCount += 1;
+      }
     }
   }
 
@@ -220,6 +250,12 @@ export function computeMetrics(rows: Array<{ fields: any }>) {
     navTotal,
     distributionsTotal,
     netMoicAvg: moicCount ? moicSum / moicCount : 0,
+    availability: {
+      commitment: hasCommitment,
+      nav: hasNav,
+      distributions: hasDistributions,
+      netMoic: hasMoic,
+    },
   };
 }
 
