@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 
@@ -10,6 +10,14 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<SignInLoadingState />}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
@@ -113,6 +121,20 @@ export default function SignInPage() {
             </a>
             .
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignInLoadingState() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-16">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto h-12 w-12 rounded-full bg-blue-100" />
+          <div className="mx-auto h-6 w-40 rounded-full bg-slate-200" />
+          <div className="mx-auto h-4 w-full rounded-full bg-slate-100" />
         </div>
       </div>
     </div>
