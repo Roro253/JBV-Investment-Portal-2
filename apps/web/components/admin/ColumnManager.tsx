@@ -95,6 +95,8 @@ export default function ColumnManager({
     return map;
   }, [columns]);
 
+  const allColumnIds = useMemo(() => columns.map((col) => col.normalizedId), [columns]);
+
   const hiddenSet = useMemo(() => new Set(layout.hidden || []), [layout.hidden]);
 
   const orderedIds = useMemo(() => layout.order.filter((id) => columnMap.has(id)), [layout.order, columnMap]);
@@ -121,6 +123,16 @@ export default function ColumnManager({
   };
 
   const makeRuleKey = (normalizedId: string) => `${tableId}:${normalizedId}`;
+
+  const handleToggleAll = (visible: boolean) => {
+    const nextHidden = new Set(layout.hidden || []);
+    if (visible) {
+      for (const id of allColumnIds) nextHidden.delete(id);
+    } else {
+      for (const id of allColumnIds) nextHidden.add(id);
+    }
+    onLayoutChange({ order: layout.order, hidden: Array.from(nextHidden) });
+  };
 
   const handleRuleToggle = async (normalizedId: string, which: "lp" | "partners", value: boolean) => {
     const key = makeRuleKey(normalizedId);
@@ -154,10 +166,26 @@ export default function ColumnManager({
         <div className="fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
           <aside className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
-            <header className="flex items-center justify-between border-b px-5 py-4">
-              <div>
+            <header className="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
+              <div className="flex flex-col gap-2">
                 <h2 className="text-base font-semibold text-slate-900">Manage Columns</h2>
                 <p className="text-sm text-slate-500">Arrange local columns and adjust LP/Partner visibility.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => handleToggleAll(true)}
+                  >
+                    Check all
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => handleToggleAll(false)}
+                  >
+                    Uncheck all
+                  </button>
+                </div>
               </div>
               <button
                 type="button"

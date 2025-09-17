@@ -4,8 +4,8 @@ export default function HelpPage() {
       <h2 className="text-2xl font-semibold text-slate-900">Help & Resources</h2>
       <p className="text-sm text-slate-600">
         Looking for assistance? Your dedicated JBV team is ready to help. Reach out to your relationship manager or email
-        <a href="mailto:support@jbv.com" className="text-blue-600 hover:underline">
-          support@jbv.com
+        <a href="mailto:jb@JBV.com" className="text-blue-600 hover:underline">
+          jb@JBV.com
         </a>
         .
       </p>
