@@ -42,10 +42,20 @@ function SignInContent() {
 
       if (result?.error) {
         setEmailStatus("error");
-        setErrorMessage(result.error);
-      } else {
-        setEmailStatus("sent");
+        if (result.error === "CredentialsSignin") {
+          setErrorMessage("This email is not authorized to access the portal.");
+        } else {
+          setErrorMessage(result.error);
+        }
+        return;
       }
+
+      if (result?.url) {
+        window.location.href = result.url;
+        return;
+      }
+
+      setEmailStatus("sent");
     } catch (err: any) {
       setEmailStatus("error");
       setErrorMessage(err?.message || "Failed to send sign-in link.");

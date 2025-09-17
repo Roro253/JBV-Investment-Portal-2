@@ -1,8 +1,9 @@
 import { type NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import EmailProvider from "next-auth/providers/email";
 import GoogleProvider from "next-auth/providers/google";
 
-import { isAdmin } from "./auth-helpers";
+import { getAdminEmails, isAdmin } from "./auth-helpers";
 
 function buildProviders(): NextAuthOptions["providers"] {
   const providers: NextAuthOptions["providers"] = [];
@@ -26,7 +27,55 @@ function buildProviders(): NextAuthOptions["providers"] {
   }
 
   if (providers.length === 0) {
-    console.warn("[auth] No authentication providers configured. Configure Email or Google provider env vars.");
+    const allowedEmails = new Set(getAdminEmails());
+    const devEmails = (process.env.DEV_LOGIN_EMAILS || "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+    for (const email of devEmails) {
+      allowedEmails.add(email);
+    }
+
+    console.warn(
+      "[auth] No authentication providers configured. Falling back to in-memory development login restricted to:",
+      Array.from(allowedEmails)
+    );
+
+    providers.push(
+      CredentialsProvider({
+        id: "email",
+        name: "Development Email",
+        credentials: {
+          email: {
+            label: "Email",
+            type: "email",
+            placeholder: "you@example.com",
+          },
+        },
+        async authorize(credentials) {
+          const email = credentials?.email;
+          if (!email || typeof email !== "string") {
+            return null;
+          }
+
+          const normalizedEmail = email.trim().toLowerCase();
+          if (!normalizedEmail) {
+            return null;
+          }
+
+          if (allowedEmails.size > 0 && !allowedEmails.has(normalizedEmail)) {
+            console.warn(`[auth] Development login rejected for unauthorized email: ${normalizedEmail}`);
+            return null;
+          }
+
+          return {
+            id: normalizedEmail,
+            email: normalizedEmail,
+            name: normalizedEmail,
+          };
+        },
+      })
+    );
   }
 
   return providers;
@@ -34,7 +83,7 @@ function buildProviders(): NextAuthOptions["providers"] {
 
 export const authOptions: NextAuthOptions = {
   providers: buildProviders(),
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET || "development-secret",
   pages: {
     signIn: "/auth/signin",
   },
