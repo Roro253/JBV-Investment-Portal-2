@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { isAdmin } from "@/lib/auth-helpers";
+import { isAdmin } from "@/lib/is-admin";
 
 const AUTH_SECRET = process.env.NEXTAUTH_SECRET || "development-secret";
 

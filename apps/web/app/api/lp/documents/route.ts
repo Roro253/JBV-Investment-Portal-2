@@ -6,8 +6,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Attachment = {
-  name: string;
-  url: string;
+  name?: string;
+  url?: string;
   size?: number;
   type?: string;
   filename?: string;
@@ -52,12 +52,13 @@ export async function GET() {
 
     const documents: Array<{
       name: string;
-      url: string;
       size?: number;
       type?: string;
       investmentId: string;
       investmentName?: string;
       periodEnding?: any;
+      field: string;
+      index: number;
     }> = [];
 
     for (const record of records) {
@@ -65,21 +66,22 @@ export async function GET() {
       const investmentName = resolveInvestmentName(fields);
       const periodEnding = resolvePeriodEnding(fields);
 
-      for (const value of Object.values(fields)) {
+      for (const [fieldName, value] of Object.entries(fields)) {
         if (!Array.isArray(value)) continue;
-        for (const entry of value) {
+        value.forEach((entry, index) => {
           if (isAttachment(entry)) {
             documents.push({
               name: entry.name || entry.filename || "Document",
-              url: entry.url,
               size: entry.size,
               type: entry.type,
               investmentId: record.id,
               investmentName,
               periodEnding,
+              field: fieldName,
+              index,
             });
           }
-        }
+        });
       }
     }
 

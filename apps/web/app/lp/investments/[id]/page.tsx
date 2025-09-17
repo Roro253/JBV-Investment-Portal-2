@@ -31,12 +31,13 @@ interface LpDataResponse {
 
 interface DocumentItem {
   name: string;
-  url: string;
   size?: number;
   type?: string;
   investmentId: string;
   investmentName?: string;
   periodEnding?: any;
+  field: string;
+  index: number;
 }
 
 interface DocumentsResponse {
@@ -300,24 +301,33 @@ export default function InvestmentDetailPage() {
               <p className="text-sm text-slate-500">Latest files associated with this investment.</p>
               <div className="space-y-3">
                 {documents.length ? (
-                  documents.map((doc) => (
-                    <a
-                      key={`${doc.url}-${doc.name}`}
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm text-blue-700 transition hover:border-blue-400 hover:bg-blue-50"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-900">{doc.name}</p>
-                        <p className="text-xs text-slate-500">
-                          {doc.periodEnding ? `Period Ending: ${formatValue("Period Ending", doc.periodEnding)}` : "Document"}
-                          {doc.size ? ` · ${(doc.size / (1024 * 1024)).toFixed(2)} MB` : ""}
-                        </p>
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Download</span>
-                    </a>
-                  ))
+                  documents.map((doc) => {
+                    const downloadUrl = `/api/lp/documents/download?recordId=${encodeURIComponent(
+                      doc.investmentId
+                    )}&field=${encodeURIComponent(doc.field)}&index=${doc.index}`;
+                    const sizeLabel = doc.size ? `${(doc.size / (1024 * 1024)).toFixed(2)} MB` : null;
+                    const docKey = `${doc.investmentId}-${doc.field}-${doc.index}`;
+                    return (
+                      <a
+                        key={docKey}
+                        href={downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm text-blue-700 transition hover:border-blue-400 hover:bg-blue-50"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-900">{doc.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {doc.periodEnding
+                              ? `Period Ending: ${formatValue("Period Ending", doc.periodEnding)}`
+                              : "Document"}
+                            {sizeLabel ? ` · ${sizeLabel}` : ""}
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Download</span>
+                      </a>
+                    );
+                  })
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
                     No documents have been shared for this investment yet.
