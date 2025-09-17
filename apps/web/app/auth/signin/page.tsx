@@ -34,16 +34,25 @@ function SignInContent() {
     setEmailStatus("sending");
     setErrorMessage(null);
     try {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail) {
+        setEmailStatus("error");
+        setErrorMessage("Enter a valid email address to receive a sign-in link.");
+        return;
+      }
+
       const result = await signIn("email", {
-        email,
+        email: trimmedEmail,
         redirect: false,
         callbackUrl,
       });
 
       if (result?.error) {
         setEmailStatus("error");
-        if (result.error === "CredentialsSignin") {
+        if (result.error === "AccessDenied" || result.error === "CredentialsSignin") {
           setErrorMessage("This email is not authorized to access the portal.");
+        } else if (result.error === "EmailSignin") {
+          setErrorMessage("We couldn't send the sign-in link. Please try again or contact support if the issue persists.");
         } else {
           setErrorMessage(result.error);
         }

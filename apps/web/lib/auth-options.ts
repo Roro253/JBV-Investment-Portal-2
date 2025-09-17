@@ -4,6 +4,20 @@ import EmailProvider, { type EmailConfig } from "next-auth/providers/email";
 import GoogleProvider from "next-auth/providers/google";
 
 import { getAdminEmails, isAdmin } from "./auth-helpers";
+import createInMemoryAuthAdapter from "./in-memory-auth-adapter";
+
+const MAGIC_LINK_MAX_AGE_SECONDS = 15 * 60; // 15 minutes
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.toLowerCase();
+}
 
 function resolveEmailServer(): EmailConfig["server"] | null {
   const directServer = process.env.EMAIL_SERVER?.trim();
@@ -68,14 +82,19 @@ function buildProviders(): NextAuthOptions["providers"] {
   const providers: NextAuthOptions["providers"] = [];
 
   const emailServer = resolveEmailServer();
-  if (emailServer && process.env.EMAIL_FROM) {
+  const emailFrom = process.env.EMAIL_FROM?.trim();
+  if (emailServer && emailFrom) {
     providers.push(
       EmailProvider({
         server: emailServer,
-        from: process.env.EMAIL_FROM,
+        from: emailFrom,
+        maxAge: MAGIC_LINK_MAX_AGE_SECONDS,
+        normalizeIdentifier(identifier) {
+          return identifier.trim().toLowerCase();
+        },
       })
     );
-  } else if (emailServer && !process.env.EMAIL_FROM) {
+  } else if (emailServer && !emailFrom) {
     console.warn("[auth] EMAIL_FROM must be configured to send magic link emails.");
   }
 
@@ -144,19 +163,42 @@ function buildProviders(): NextAuthOptions["providers"] {
 }
 
 export const authOptions: NextAuthOptions = {
+  adapter: createInMemoryAuthAdapter(),
   providers: buildProviders(),
+  session: {
+    strategy: "jwt",
+  },
   secret: process.env.NEXTAUTH_SECRET || "development-secret",
   pages: {
     signIn: "/auth/signin",
   },
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "email") {
+        const candidateEmail = normalizeEmail(user?.email ?? account.providerAccountId);
+        if (!candidateEmail || !isAdmin(candidateEmail)) {
+          const attemptedEmail = user?.email ?? account?.providerAccountId ?? "<unknown>";
+          console.warn(`[auth] Magic link request rejected for unauthorized email: ${attemptedEmail}`);
+          return false;
+        }
+      }
+      return true;
+    },
     async jwt({ token }) {
-      token.role = isAdmin(token.email) ? "admin" : "lp";
+      const normalizedEmail = normalizeEmail(token.email);
+      if (normalizedEmail) {
+        token.email = normalizedEmail;
+      }
+      token.role = normalizedEmail && isAdmin(normalizedEmail) ? "admin" : "lp";
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role ?? (isAdmin(session.user.email) ? "admin" : "lp");
+        const normalizedEmail = normalizeEmail(session.user.email) ?? (typeof token.email === "string" ? token.email : null);
+        if (normalizedEmail) {
+          session.user.email = normalizedEmail;
+        }
+        session.user.role = (token.role as typeof session.user.role) ?? (normalizedEmail && isAdmin(normalizedEmail) ? "admin" : "lp");
       }
       return session;
     },
