@@ -3,19 +3,15 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+
+import { ChartLine } from "@/components/lp/ChartLine";
+import { DocCard } from "@/components/lp/DocCard";
+import { Kpi } from "@/components/lp/Kpi";
+import { RefreshStatusIndicator } from "@/components/lp/RefreshStatusIndicator";
 import type { ExpandedRecord } from "@/lib/airtable";
-import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
 import { normalizeFieldKey } from "@/lib/airtable";
-import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
+import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
+import { usePolling } from "@/hooks/usePolling";
 
 interface Metrics {
   commitmentTotal: number;
@@ -31,7 +27,7 @@ interface LpDataResponse {
 
 interface DocumentItem {
   name: string;
-  url: string;
+  downloadUrl: string;
   size?: number;
   type?: string;
   investmentId: string;
@@ -53,33 +49,6 @@ function parseNumber(value: any) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-}
-
-function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
-  const label =
-    status === "refreshing"
-      ? "Refreshing"
-      : status === "error"
-      ? "Error"
-      : "Idle";
-  const tone =
-    status === "refreshing"
-      ? "bg-blue-50 text-blue-600"
-      : status === "error"
-      ? "bg-red-50 text-red-600"
-      : "bg-emerald-50 text-emerald-600";
-
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
-      <span className="h-2 w-2 rounded-full bg-current opacity-70" aria-hidden="true" />
-      Refresh: {label}
-      {lastUpdated ? (
-        <span className="text-[11px] font-normal opacity-70">
-          {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      ) : null}
-    </span>
-  );
 }
 
 function formatValue(key: string, value: any) {
@@ -149,9 +118,7 @@ export default function InvestmentDetailPage() {
   const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
   const { data: docData } = usePolling<DocumentsResponse>("/api/lp/documents");
 
-  const record = useMemo(() => {
-    return data?.records.find((item) => item.id === investmentId);
-  }, [data, investmentId]);
+  const record = useMemo(() => data?.records.find((item) => item.id === investmentId), [data, investmentId]);
 
   const investmentName = resolveInvestmentName(record) ?? "Investment";
 
@@ -217,7 +184,7 @@ export default function InvestmentDetailPage() {
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">{investmentName}</h2>
           <p className="text-sm text-slate-500">Detailed insights for this holding, refreshed automatically.</p>
         </div>
-        {buildStatusBadge(status, lastUpdated)}
+        <RefreshStatusIndicator status={status} lastUpdated={lastUpdated} />
       </div>
 
       {status === "error" && error ? (
@@ -235,51 +202,28 @@ export default function InvestmentDetailPage() {
       ) : (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <p className="text-sm font-medium text-slate-500">Commitment</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {metrics.commitment !== null ? formatCurrencyUSD(metrics.commitment) : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <p className="text-sm font-medium text-slate-500">Total NAV</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {metrics.nav !== null ? formatCurrencyUSD(metrics.nav) : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <p className="text-sm font-medium text-slate-500">Distributions</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {metrics.distributions !== null ? formatCurrencyUSD(metrics.distributions) : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <p className="text-sm font-medium text-slate-500">Net MOIC</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {metrics.netMoic !== null ? `${formatNumber(metrics.netMoic, 2)}x` : "—"}
-              </p>
-            </div>
+            <Kpi label="Commitment" value={metrics.commitment !== null ? formatCurrencyUSD(metrics.commitment) : "—"} />
+            <Kpi label="Total NAV" value={metrics.nav !== null ? formatCurrencyUSD(metrics.nav) : "—"} />
+            <Kpi label="Distributions" value={metrics.distributions !== null ? formatCurrencyUSD(metrics.distributions) : "—"} />
+            <Kpi
+              label="Net MOIC"
+              value={metrics.netMoic !== null ? `${formatNumber(metrics.netMoic, 2)}x` : "—"}
+              hint="MOIC"
+            />
           </div>
 
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h3 className="text-lg font-semibold text-slate-900">Valuation Timeline</h3>
             <p className="text-sm text-slate-500">Chronological NAV snapshots sourced from Airtable.</p>
             <div className="mt-4 h-64">
-              {navSeries.length ? (
-                <ResponsiveContainer>
-                  <LineChart data={navSeries} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#475569" }} />
-                    <YAxis tickFormatter={(value) => formatCurrencyUSD(value).replace("$", "")} tick={{ fontSize: 12, fill: "#475569" }} />
-                    <Tooltip formatter={(value: number) => formatCurrencyUSD(value)} labelFormatter={(label) => `Period Ending: ${label}`} />
-                    <Line type="monotone" dataKey="value" stroke="#2563EB" strokeWidth={2} dot={{ r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center text-sm text-slate-500">
-                  Additional valuation history is not yet available for this holding.
-                </div>
-              )}
+              <ChartLine
+                data={navSeries}
+                valueFormatter={(value) => formatCurrencyUSD(value)}
+                labelFormatter={(label) => `Period Ending: ${label}`}
+                emptyMessage={
+                  <>Additional valuation history is not yet available for this holding.</>
+                }
+              />
             </div>
           </div>
 
@@ -300,24 +244,19 @@ export default function InvestmentDetailPage() {
               <p className="text-sm text-slate-500">Latest files associated with this investment.</p>
               <div className="space-y-3">
                 {documents.length ? (
-                  documents.map((doc) => (
-                    <a
-                      key={`${doc.url}-${doc.name}`}
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm text-blue-700 transition hover:border-blue-400 hover:bg-blue-50"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-900">{doc.name}</p>
-                        <p className="text-xs text-slate-500">
-                          {doc.periodEnding ? `Period Ending: ${formatValue("Period Ending", doc.periodEnding)}` : "Document"}
-                          {doc.size ? ` · ${(doc.size / (1024 * 1024)).toFixed(2)} MB` : ""}
-                        </p>
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Download</span>
-                    </a>
-                  ))
+                  documents.map((doc) => {
+                    const periodLabel = doc.periodEnding ? `Period Ending: ${formatValue("Period Ending", doc.periodEnding)}` : undefined;
+                    const sizeLabel = doc.size ? `${(doc.size / (1024 * 1024)).toFixed(2)} MB` : undefined;
+                    return (
+                      <DocCard
+                        key={`${doc.downloadUrl}-${doc.name}`}
+                        name={doc.name}
+                        description={periodLabel}
+                        href={doc.downloadUrl}
+                        meta={sizeLabel}
+                      />
+                    );
+                  })
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
                     No documents have been shared for this investment yet.

@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+
+import { HoldingsTable } from "@/components/lp/HoldingsTable";
+import { RefreshStatusIndicator } from "@/components/lp/RefreshStatusIndicator";
 import type { ExpandedRecord } from "@/lib/airtable";
-import { formatCurrencyUSD, formatDate, formatNumber, formatPercent } from "@/lib/format";
 import { normalizeFieldKey } from "@/lib/airtable";
-import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
+import { formatCurrencyUSD, formatDate, formatNumber, formatPercent } from "@/lib/format";
+import { usePolling } from "@/hooks/usePolling";
 
 interface Metrics {
   commitmentTotal: number;
@@ -51,33 +54,6 @@ function valueToString(value: any) {
   return String(value);
 }
 
-function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
-  const label =
-    status === "refreshing"
-      ? "Refreshing"
-      : status === "error"
-      ? "Error"
-      : "Idle";
-  const tone =
-    status === "refreshing"
-      ? "bg-blue-50 text-blue-600"
-      : status === "error"
-      ? "bg-red-50 text-red-600"
-      : "bg-emerald-50 text-emerald-600";
-
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
-      <span className="h-2 w-2 rounded-full bg-current opacity-70" aria-hidden="true" />
-      Refresh: {label}
-      {lastUpdated ? (
-        <span className="text-[11px] font-normal opacity-70">
-          {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 function formatValue(key: string, value: any) {
   if (value === null || value === undefined) return "—";
   if (Array.isArray(value)) {
@@ -97,9 +73,7 @@ function formatValue(key: string, value: any) {
   }
   const normalized = normalizeFieldKey(key);
   if (typeof value === "number") {
-    if (
-      /commitment|capital|nav|distribution|cost|value|balance|amount/.test(normalized)
-    ) {
+    if (/commitment|capital|nav|distribution|cost|value|balance|amount/.test(normalized)) {
       return formatCurrencyUSD(value);
     }
     if (/percent|irr/.test(normalized)) {
@@ -213,7 +187,7 @@ export default function LPInvestmentsPage() {
             Every field you are permitted to view, with instant filtering and export capabilities.
           </p>
         </div>
-        {buildStatusBadge(status, lastUpdated)}
+        <RefreshStatusIndicator status={status} lastUpdated={lastUpdated} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -246,58 +220,7 @@ export default function LPInvestmentsPage() {
           No investments match your current filters.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-100/80">
-              <tr>
-                {columnKeys.map((key) => (
-                  <th
-                    key={key}
-                    scope="col"
-                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                  >
-                    {key}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {filteredRecords.map((record) => {
-                const fields = record.fields || {};
-                return (
-                  <tr key={record.id} className="hover:bg-blue-50/40">
-                    {columnKeys.map((key) => {
-                      const value = Object.prototype.hasOwnProperty.call(fields, key) ? fields[key] : undefined;
-                      const display = formatValue(key, value);
-                      const normalized = normalizeFieldKey(key);
-                      const isLinked = Array.isArray(value) && value.length && value[0] && typeof value[0] === "object" && "displayName" in value[0];
-                      return (
-                        <td key={key} className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
-                          {isLinked ? (
-                            <div className="flex flex-wrap gap-2">
-                              {(value as any[]).map((item: any) => (
-                                <span
-                                  key={item.id || item.displayName || item.name}
-                                  className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-                                >
-                                  {item.displayName || item.name || item.id}
-                                </span>
-                              ))}
-                            </div>
-                          ) : /date|period|as of/.test(normalized) && typeof value === "string" ? (
-                            <span>{formatDate(value)}</span>
-                          ) : (
-                            <span>{display}</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <HoldingsTable records={filteredRecords} columnKeys={columnKeys} renderValue={formatValue} />
       )}
     </div>
   );

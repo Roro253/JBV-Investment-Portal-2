@@ -1,21 +1,15 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  BarChart,
-  Bar,
-} from "recharts";
+
+import { ChartBar } from "@/components/lp/ChartBar";
+import { ChartLine } from "@/components/lp/ChartLine";
+import { Kpi } from "@/components/lp/Kpi";
+import { RefreshStatusIndicator } from "@/components/lp/RefreshStatusIndicator";
 import type { ExpandedRecord } from "@/lib/airtable";
-import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
-import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
 import { normalizeFieldKey } from "@/lib/airtable";
+import { formatCurrencyUSD, formatDate, formatNumber } from "@/lib/format";
+import { usePolling } from "@/hooks/usePolling";
 
 interface Metrics {
   commitmentTotal: number;
@@ -29,12 +23,11 @@ interface LpDataResponse {
   metrics: Metrics;
 }
 
-type ChartDatum = {
+interface ChartDatum {
   label: string;
   value: number;
-  raw: any;
   sortKey: { type: "date" | "text"; value: number | string };
-};
+}
 
 function parseNumber(value: any) {
   if (value === null || value === undefined) return null;
@@ -52,10 +45,7 @@ function formatPeriodLabel(value: any) {
   if (!value) return "—";
   const date = new Date(value);
   if (!Number.isNaN(date.getTime())) {
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      year: "numeric",
-    });
+    return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
   }
   if (typeof value === "string") return value;
   return String(value);
@@ -92,37 +82,10 @@ function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
   return undefined;
 }
 
-function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
-  const label =
-    status === "refreshing"
-      ? "Refreshing"
-      : status === "error"
-      ? "Error"
-      : "Idle";
-  const tone =
-    status === "refreshing"
-      ? "bg-blue-50 text-blue-600"
-      : status === "error"
-      ? "bg-red-50 text-red-600"
-      : "bg-emerald-50 text-emerald-600";
-
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
-      <span className="h-2 w-2 rounded-full bg-current opacity-70" aria-hidden="true" />
-      Refresh: {label}
-      {lastUpdated ? (
-        <span className="text-[11px] font-normal opacity-70">
-          {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 function resolveDisplayName(record: ExpandedRecord, fallback = "Unnamed Investment") {
   const fields = record.fields || {};
-  const nameKey = findFieldKey([record], ["Partner Investment", "Investment", "Name", "Title"]);
-  const value = nameKey ? fields[nameKey] : undefined;
+  const key = findFieldKey([record], ["Partner Investment", "Investment", "Name", "Title"]);
+  const value = key ? fields[key] : undefined;
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
@@ -158,12 +121,7 @@ export default function LPDashboardPage() {
       const periodRaw = fields[fieldKeys.period];
       if (!periodRaw) continue;
       const label = formatPeriodLabel(periodRaw);
-      series.push({
-        label,
-        value,
-        raw: periodRaw,
-        sortKey: buildSortKey(periodRaw),
-      });
+      series.push({ label, value, sortKey: buildSortKey(periodRaw) });
     }
     return series.sort((a, b) => compareSortKey(a.sortKey, b.sortKey));
   }, [records, fieldKeys]);
@@ -184,12 +142,7 @@ export default function LPDashboardPage() {
       if (existing) {
         existing.value += amount;
       } else {
-        map.set(key, {
-          label,
-          value: amount,
-          raw: periodRaw,
-          sortKey: buildSortKey(periodRaw),
-        });
+        map.set(key, { label, value: amount, sortKey: buildSortKey(periodRaw) });
       }
     }
     return Array.from(map.values()).sort((a, b) => compareSortKey(a.sortKey, b.sortKey));
@@ -210,61 +163,48 @@ export default function LPDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Portfolio Overview</h2>
-          <p className="text-sm text-slate-500">A holistic snapshot of your capital commitments and performance.</p>
+          <p className="text-sm text-slate-500">
+            A holistic snapshot of your capital commitments, valuations, and recent activity.
+          </p>
         </div>
-        {buildStatusBadge(status, lastUpdated)}
+        <RefreshStatusIndicator status={status} lastUpdated={lastUpdated} />
       </div>
 
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          We were unable to refresh your portfolio data. The team has been notified, please try again shortly.
+          We were unable to refresh your portfolio data. Please retry in a few moments or contact support if the issue persists.
         </div>
       ) : null}
 
       {!initialized ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="h-32 animate-pulse rounded-2xl bg-gradient-to-br from-slate-200/80 to-slate-100"
-            />
+            <div key={idx} className="h-32 animate-pulse rounded-2xl bg-gradient-to-br from-slate-200/80 to-slate-100" />
           ))}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">Total Commitment</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.commitmentTotal)}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">Capital committed across all vehicles.</p>
-          </div>
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">Total Distributions</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.distributionsTotal)}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">Realized capital returned to date.</p>
-          </div>
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">Total NAV</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrencyUSD(metrics.navTotal)}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">Net asset value across current holdings.</p>
-          </div>
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <p className="flex items-center gap-2 text-sm font-medium text-slate-500">
-              Net MOIC
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-                MOIC = Multiple on Invested Capital
-              </span>
-            </p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {metrics.netMoicAvg ? `${formatNumber(metrics.netMoicAvg, 2)}x` : "—"}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">Average multiple across realized and unrealized positions.</p>
-          </div>
+          <Kpi
+            label="Total Commitment"
+            value={formatCurrencyUSD(metrics.commitmentTotal)}
+            description="Capital committed across all vehicles."
+          />
+          <Kpi
+            label="Total NAV"
+            value={formatCurrencyUSD(metrics.navTotal)}
+            description="Net asset value (prefers Total NAV; falls back to Current NAV)."
+          />
+          <Kpi
+            label="Total Distributions"
+            value={formatCurrencyUSD(metrics.distributionsTotal)}
+            description="Realized capital returned to date."
+          />
+          <Kpi
+            label="Net MOIC"
+            value={metrics.netMoicAvg ? `${formatNumber(metrics.netMoicAvg, 2)}x` : "—"}
+            description="Average multiple on invested capital across visible holdings."
+            hint="MOIC"
+          />
         </div>
       )}
 
@@ -273,56 +213,36 @@ export default function LPDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">NAV Over Time</h3>
-              <p className="text-sm text-slate-500">Track valuation progression by period ending.</p>
+              <p className="text-sm text-slate-500">Track valuation progression by reporting period.</p>
             </div>
           </div>
           <div className="mt-4 h-64">
-            {navSeries.length ? (
-              <ResponsiveContainer>
-                <LineChart data={navSeries} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#475569" }} />
-                  <YAxis tickFormatter={(value) => formatCurrencyUSD(value).replace("$", "")} tick={{ fontSize: 12, fill: "#475569" }} />
-                  <Tooltip
-                    formatter={(value: number) => formatCurrencyUSD(value)}
-                    labelFormatter={(label) => `Period Ending: ${label}`}
-                  />
-                  <Line type="monotone" dataKey="value" stroke="#2563EB" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center text-sm text-slate-500">
-                NAV by period is unavailable. As data becomes available, the visualization will render automatically.
-              </div>
-            )}
+            <ChartLine
+              data={navSeries}
+              valueFormatter={(value) => formatCurrencyUSD(value)}
+              labelFormatter={(label) => `Period Ending: ${label}`}
+              emptyMessage={
+                <>NAV by period is unavailable. As updates are published, this visualization will populate automatically.</>
+              }
+            />
           </div>
         </div>
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Distributions by Period</h3>
-              <p className="text-sm text-slate-500">Cumulative distributions grouped by reporting period.</p>
+              <p className="text-sm text-slate-500">Cumulative distributions grouped by reporting cycle.</p>
             </div>
           </div>
           <div className="mt-4 h-64">
-            {distributionsSeries.length ? (
-              <ResponsiveContainer>
-                <BarChart data={distributionsSeries} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#475569" }} />
-                  <YAxis tickFormatter={(value) => formatCurrencyUSD(value).replace("$", "")} tick={{ fontSize: 12, fill: "#475569" }} />
-                  <Tooltip
-                    formatter={(value: number) => formatCurrencyUSD(value)}
-                    labelFormatter={(label) => `Period Ending: ${label}`}
-                  />
-                  <Bar dataKey="value" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center text-sm text-slate-500">
-                Distribution history is not yet available. Once reported, documents and values will populate automatically.
-              </div>
-            )}
+            <ChartBar
+              data={distributionsSeries}
+              valueFormatter={(value) => formatCurrencyUSD(value)}
+              labelFormatter={(label) => `Period Ending: ${label}`}
+              emptyMessage={
+                <>Distribution history is not yet available. Once reported, documents and values will populate automatically.</>
+              }
+            />
           </div>
         </div>
       </div>
@@ -331,7 +251,7 @@ export default function LPDashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Recent Activity</h3>
-            <p className="text-sm text-slate-500">The five most recently updated holdings from Airtable.</p>
+            <p className="text-sm text-slate-500">The five most recently updated holdings synced from Airtable.</p>
           </div>
         </div>
         <div className="mt-4 space-y-4">
@@ -339,9 +259,7 @@ export default function LPDashboardPage() {
             recentActivity.map((record) => {
               const name = resolveDisplayName(record);
               const updated = record._updatedTime ? formatDate(record._updatedTime) : "—";
-              const commitment = fieldKeys.commitment
-                ? record.fields?.[fieldKeys.commitment]
-                : undefined;
+              const commitment = fieldKeys.commitment ? record.fields?.[fieldKeys.commitment] : undefined;
               const nav = fieldKeys.nav ? record.fields?.[fieldKeys.nav] : undefined;
               const netMoic = fieldKeys.netMoic ? record.fields?.[fieldKeys.netMoic] : undefined;
 

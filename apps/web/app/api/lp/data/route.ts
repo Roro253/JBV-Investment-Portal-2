@@ -1,25 +1,24 @@
 import { getSession } from "@/lib/auth";
-import { type Role } from "@/lib/auth-helpers";
-import { computeMetrics, loadPartnerInvestmentRecords } from "@/lib/lp-server";
+import { computeMetrics, fetchPartnerInvestmentsForEmail } from "@/lib/lp-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    const session = await getSession();
-    const user = session?.user;
-    const email = user?.email;
-    if (!session || !user || !email) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const session = await getSession();
+  const email = session?.user?.email;
 
-    const role = (user.role as Role | undefined) ?? "lp";
-    const { records } = await loadPartnerInvestmentRecords(email, role);
+  if (!email) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { records } = await fetchPartnerInvestmentsForEmail(email);
     const metrics = computeMetrics(records);
 
     return Response.json({ records, metrics });
   } catch (error: any) {
-    return Response.json({ error: error?.message || "Failed to load data" }, { status: 500 });
+    const message = typeof error?.message === "string" ? error.message : "Failed to load data";
+    return new Response(JSON.stringify({ error: message }), { status: 500 });
   }
 }
