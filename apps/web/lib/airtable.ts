@@ -1,5 +1,7 @@
 import Airtable from "airtable";
 import Bottleneck from "bottleneck";
+import { normalizeFieldKey } from "./airtable-shared";
+import type { ExpandedRecord, LinkedRecord } from "./airtable-shared";
 
 export const PARTNER_INVESTMENTS_TABLE = "Partner Investments";
 export const VISIBILITY_RULES_TABLE = "VisibilityRules";
@@ -24,18 +26,6 @@ const limiter = new Bottleneck({ minTime: 60 });
 export const airtableLimiter = limiter;
 
 export type AirtableRecord = Airtable.Record<any>;
-
-export type LinkedRecord = {
-  id: string;
-  fields: Record<string, any>;
-  displayName: any;
-};
-
-export type ExpandedRecord = {
-  id: string;
-  fields: Record<string, any>;
-  _updatedTime: string | null;
-};
 
 const CHUNK_SIZE = 50;
 
@@ -130,6 +120,5 @@ export async function selectAllRecords(
     .all();
 }
 
-export function normalizeFieldKey(name: string) {
-  return (name || "").trim().toLowerCase();
-}
+export { normalizeFieldKey } from "./airtable-shared";
+export type { ExpandedRecord, LinkedRecord } from "./airtable-shared";

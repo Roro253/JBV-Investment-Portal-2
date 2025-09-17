@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ExpandedRecord } from "@/lib/airtable";
+import { normalizeFieldKey, type ExpandedRecord } from "@/lib/airtable-shared";
 import { formatCurrencyUSD, formatDate, formatNumber, formatPercent } from "@/lib/format";
-import { normalizeFieldKey } from "@/lib/airtable";
 import { usePolling, type RefreshStatus } from "@/hooks/usePolling";
 
 interface Metrics {
