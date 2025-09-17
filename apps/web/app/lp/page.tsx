@@ -23,9 +23,16 @@ interface Metrics {
   netMoicAvg: number;
 }
 
+interface Profile {
+  name: string;
+  email: string;
+}
+
 interface LpDataResponse {
   records: ExpandedRecord[];
   metrics: Metrics;
+  profile: Profile;
+  note?: string;
 }
 
 type ChartDatum = {
@@ -122,6 +129,9 @@ function resolveDisplayName(record: ExpandedRecord, fallback = "Unnamed Investme
   const fields = record.fields || {};
   const nameKey = findFieldKey([record], ["Partner Investment", "Investment", "Name", "Title"]);
   const value = nameKey ? fields[nameKey] : undefined;
+  if (Array.isArray(value) && value[0] && typeof value[0] === "object" && "displayName" in value[0]) {
+    return value[0].displayName || fallback;
+  }
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
@@ -135,11 +145,23 @@ export default function LPDashboardPage() {
     distributionsTotal: 0,
     netMoicAvg: 0,
   };
+  const note = data?.note;
+
+  const noteMessage = useMemo(() => {
+    if (note === "contact-not-found") {
+      return "We couldn’t locate a matching Contact record for your login email. Please reach out to the investor relations team to confirm your access.";
+    }
+    if (note === "view-filtered") {
+      return "Your Airtable view is currently filtering out investment rows. Adjust the view or contact an administrator if you believe this is unexpected.";
+    }
+    return null;
+  }, [note]);
 
   const fieldKeys = useMemo(() => {
     return {
       period: findFieldKey(records, ["Period Ending", "As of Date", "Date"]),
-      nav: findFieldKey(records, ["Total NAV", "Current NAV"]),
+      totalNav: findFieldKey(records, ["Total NAV"]),
+      currentNav: findFieldKey(records, ["Current NAV"]),
       distributions: findFieldKey(records, ["Distributions"]),
       commitment: findFieldKey(records, ["Commitment"]),
       netMoic: findFieldKey(records, ["Net MOIC", "MOIC"]),
@@ -147,15 +169,22 @@ export default function LPDashboardPage() {
   }, [records]);
 
   const navSeries = useMemo(() => {
-    if (!records.length || !fieldKeys.period || !fieldKeys.nav) return [] as ChartDatum[];
+    if (!records.length || !fieldKeys.period) return [] as ChartDatum[];
     const series: ChartDatum[] = [];
     for (const record of records) {
       const fields = record.fields || {};
-      if (!Object.prototype.hasOwnProperty.call(fields, fieldKeys.nav)) continue;
-      const value = parseNumber(fields[fieldKeys.nav]);
-      if (value === null) continue;
       const periodRaw = fields[fieldKeys.period];
       if (!periodRaw) continue;
+
+      let value: number | null = null;
+      if (fieldKeys.totalNav && Object.prototype.hasOwnProperty.call(fields, fieldKeys.totalNav)) {
+        value = parseNumber(fields[fieldKeys.totalNav]);
+      }
+      if (value === null && fieldKeys.currentNav && Object.prototype.hasOwnProperty.call(fields, fieldKeys.currentNav)) {
+        value = parseNumber(fields[fieldKeys.currentNav]);
+      }
+      if (value === null) continue;
+
       const label = formatPeriodLabel(periodRaw);
       series.push({
         label,
@@ -204,6 +233,8 @@ export default function LPDashboardPage() {
     return items.slice(0, 5);
   }, [records]);
 
+  const navKey = fieldKeys.totalNav ?? fieldKeys.currentNav;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -217,6 +248,12 @@ export default function LPDashboardPage() {
       {status === "error" && error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           We were unable to refresh your portfolio data. The team has been notified, please try again shortly.
+        </div>
+      ) : null}
+
+      {initialized && noteMessage && status !== "error" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {noteMessage}
         </div>
       ) : null}
 
@@ -289,6 +326,10 @@ export default function LPDashboardPage() {
                   <Line type="monotone" dataKey="value" stroke="#2563EB" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
+            ) : status === "error" ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                NAV data is unavailable while the latest refresh is in error.
+              </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center text-sm text-slate-500">
                 NAV by period is unavailable. As data becomes available, the visualization will render automatically.
@@ -317,6 +358,10 @@ export default function LPDashboardPage() {
                   <Bar dataKey="value" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            ) : status === "error" ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                Distribution history can’t be displayed until the latest refresh succeeds.
+              </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center text-sm text-slate-500">
                 Distribution history is not yet available. Once reported, documents and values will populate automatically.
@@ -341,7 +386,7 @@ export default function LPDashboardPage() {
               const commitment = fieldKeys.commitment
                 ? record.fields?.[fieldKeys.commitment]
                 : undefined;
-              const nav = fieldKeys.nav ? record.fields?.[fieldKeys.nav] : undefined;
+              const navValue = navKey ? record.fields?.[navKey] : undefined;
               const netMoic = fieldKeys.netMoic ? record.fields?.[fieldKeys.netMoic] : undefined;
 
               return (
@@ -359,9 +404,9 @@ export default function LPDashboardPage() {
                         Commitment: <strong>{formatCurrencyUSD(parseNumber(commitment) ?? 0)}</strong>
                       </span>
                     ) : null}
-                    {nav !== undefined ? (
+                    {navValue !== undefined ? (
                       <span>
-                        NAV: <strong>{formatCurrencyUSD(parseNumber(nav) ?? 0)}</strong>
+                        NAV: <strong>{formatCurrencyUSD(parseNumber(navValue) ?? 0)}</strong>
                       </span>
                     ) : null}
                     {netMoic !== undefined ? (
@@ -373,11 +418,11 @@ export default function LPDashboardPage() {
                 </div>
               );
             })
-          ) : (
+          ) : initialized && status !== "error" ? (
             <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
               Once investments start syncing, you will see a live trail of updates here.
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

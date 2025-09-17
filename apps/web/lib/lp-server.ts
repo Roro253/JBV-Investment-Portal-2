@@ -1,225 +1,266 @@
-import {
-  PARTNER_INVESTMENTS_TABLE,
-  VISIBILITY_RULES_TABLE,
-  VIEW_ID,
-  base,
-  expandPartnerInvestmentRecords,
-  normalizeFieldKey,
-  type AirtableRecord,
-  type ExpandedRecord,
-} from "@/lib/airtable";
+import Airtable from "airtable";
+import Bottleneck from "bottleneck";
 import type { Role } from "@/lib/auth-helpers";
 
-const EMAIL_FORMULA_BUILDERS: ((email: string) => string)[] = [
-  (email) => `FIND(LOWER('${email}'), LOWER({PrimaryContactEmailCSV}))`,
-  (email) => `FIND(LOWER('${email}'), LOWER({Primary Contact Email}))`,
-  (email) => `FIND(LOWER('${email}'), LOWER({PRIMARY CONTACT Email}))`,
-  (email) => `LOWER({Primary Contact Email})='${email}'`,
-  (email) => `LOWER({PRIMARY CONTACT Email})='${email}'`,
-];
+const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY! }).base(
+  process.env.AIRTABLE_BASE_ID!
+);
+const limiter = new Bottleneck({ minTime: 220 });
+
+const CONTACTS_TABLE = "Contacts";
+const INVEST_TABLE = "Partner Investments";
+const VISIBILITY_TABLE = "VisibilityRules";
+
+// Support both "Primary Contact" and "PRIMARY CONTACT"
+const CONTACT_LINK_FIELD_CANDIDATES = ["Primary Contact", "PRIMARY CONTACT"];
+
+// Try to find a field name that exists on a record
+export function pickExistingField(fields: Record<string, any>, candidates: string[]) {
+  return candidates.find((c) => Object.prototype.hasOwnProperty.call(fields, c));
+}
+
+// Normalize emails for comparison
+export function normEmail(s: string) {
+  return (s || "").toLowerCase().trim();
+}
+
+// Coerce currency/number strings like "$30,000.00" → 30000
+export function num(v: any): number {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "string") return Number.parseFloat(v.replace(/[,$]/g, "")) || 0;
+  return 0;
+}
+
+type ContactRecord = { id: string; fields: Record<string, any> };
+type InvestmentRecord = {
+  id: string;
+  fields: Record<string, any>;
+  _updatedTime: string | null;
+};
 
 function escapeFormulaValue(value: string) {
   return value.replace(/'/g, "''");
 }
 
-function isUnknownFieldError(err: any) {
-  const code = err?.error || err?.code;
-  if (code === "INVALID_REQUEST_UNKNOWN_FIELD_NAME") return true;
-  const message = (err?.message || "") as string;
-  return typeof message === "string" && message.toLowerCase().includes("unknown field name");
+// 1) Find one or more Contact records that match email
+export async function findContactsByEmail(email: string): Promise<ContactRecord[]> {
+  const e = normEmail(email);
+  if (!e) return [];
+  const formula = `LOWER({Email}) = '${escapeFormulaValue(e)}'`;
+  try {
+    const records = await limiter.schedule(() =>
+      base(CONTACTS_TABLE)
+        .select({ filterByFormula: formula })
+        .all()
+    );
+    return records.map((r) => ({ id: r.id, fields: r.fields as any }));
+  } catch (error) {
+    console.error("[lp-server] Failed to find contacts by email", error);
+    throw error;
+  }
 }
 
-async function fetchRowsForEmail(email: string) {
-  const safeEmail = escapeFormulaValue(email.trim().toLowerCase());
-  if (!safeEmail) {
-    return [] as AirtableRecord[];
-  }
+// 2) Fetch Partner Investments for given Contact IDs (supports multi-contact links)
+export async function getInvestmentsForContactIds(
+  contactIds: string[],
+  viewId?: string
+): Promise<InvestmentRecord[]> {
+  if (!contactIds.length) return [];
 
-  for (const builder of EMAIL_FORMULA_BUILDERS) {
-    const formula = builder(safeEmail);
-    try {
-      const records = await base(PARTNER_INVESTMENTS_TABLE)
-        .select({
-          filterByFormula: formula,
-          ...(VIEW_ID ? { view: VIEW_ID } : {}),
-        })
-        .all();
-      return records as AirtableRecord[];
-    } catch (error: any) {
-      if (isUnknownFieldError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
+  const sel: { view?: string } = {};
+  if (viewId) sel.view = viewId;
 
-  // If every formula failed due to missing fields, return an empty list.
-  return [] as AirtableRecord[];
+  try {
+    const records = await limiter.schedule(() => base(INVEST_TABLE).select(sel).all());
+    return records
+      .filter((rec) => {
+        const fields = rec.fields as any;
+        const linkFieldName = pickExistingField(fields, CONTACT_LINK_FIELD_CANDIDATES);
+        const linked = (linkFieldName ? fields[linkFieldName] : []) as string[] | undefined;
+        if (!linked?.length) return false;
+        return linked.some((id) => contactIds.includes(id));
+      })
+      .map((rec) => ({
+        id: rec.id,
+        fields: rec.fields as any,
+        _updatedTime: (rec as any)._rawJson?.modifiedTime || null,
+      }));
+  } catch (error) {
+    console.error("[lp-server] Failed to load partner investments", error);
+    throw error;
+  }
 }
 
-type VisibilityContext = {
-  role: Role;
-  allowedFields: Set<string>;
-  allowedNormalized: Set<string>;
-  ruleCount: number;
+// 3) Expand linked fields (Target Securities, Partner, Fund, Primary Contact/PRIMARY CONTACT)
+const LINK_EXPANDS: Record<string, string> = {
+  "Target Securities": "Target Securities",
+  Partner: "Partners",
+  Fund: "JBV Entities",
+  "Primary Contact": "Contacts",
+  "PRIMARY CONTACT": "Contacts",
 };
 
-async function resolveVisibility(role: Role): Promise<VisibilityContext | null> {
-  if (role === "admin") {
-    return null;
+export async function expandLinked(record: InvestmentRecord): Promise<InvestmentRecord> {
+  const fields = { ...record.fields };
+
+  for (const [fieldName, table] of Object.entries(LINK_EXPANDS)) {
+    const ids = fields[fieldName] as string[] | undefined;
+    if (!ids?.length) continue;
+
+    const linked = (
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const result = await limiter.schedule(() => base(table).find(id));
+            return {
+              id: result.id,
+              displayName:
+                (result.fields["Name"] as string) ||
+                (result.fields["Full Name"] as string) ||
+                (result.fields["Company"] as string) ||
+                (result.fields["Email"] as string) ||
+                result.id,
+              fields: result.fields,
+            };
+          } catch (error) {
+            console.error(
+              `[lp-server] Failed to expand linked record ${fieldName} (${table})`,
+              error
+            );
+            return null;
+          }
+        })
+      )
+    ).filter(Boolean);
+
+    fields[fieldName] = linked;
   }
 
-  const records = (await base(VISIBILITY_RULES_TABLE)
-    .select({ filterByFormula: "{tableId}='Partner Investments'" })
-    .all()) as AirtableRecord[];
-
-  const allowedFields = new Set<string>();
-  const allowedNormalized = new Set<string>();
-
-  for (const record of records) {
-    const fields = (record.fields || {}) as Record<string, any>;
-    const fieldId = fields.fieldId as string | undefined;
-    if (!fieldId) continue;
-    const visible = role === "lp" ? fields.visibleToLP === true : fields.visibleToPartners === true;
-    if (visible) {
-      allowedFields.add(fieldId);
-      const normalized = normalizeFieldKey(fieldId);
-      if (normalized) allowedNormalized.add(normalized);
-    }
-  }
-
-  const ruleCount = records.length;
-
-  if (ruleCount === 0) {
-    return null;
-  }
-
-  return {
-    role,
-    allowedFields,
-    allowedNormalized,
-    ruleCount,
-  };
+  return { ...record, fields };
 }
 
-function filterFields(
+const visibilityCache = new Map<Role, Set<string>>();
+
+async function getAllowedFields(role: Role): Promise<Set<string> | null> {
+  if (role === "admin") return null;
+
+  if (visibilityCache.has(role)) {
+    return visibilityCache.get(role)!;
+  }
+
+  try {
+    const rules = await limiter.schedule(() =>
+      base(VISIBILITY_TABLE)
+        .select({ filterByFormula: "{tableId} = 'Partner Investments'" })
+        .all()
+    );
+
+    const allowSet = new Set<string>();
+    for (const r of rules) {
+      const rf = r.fields as any;
+      const fieldId = rf["fieldId"] as string | undefined;
+      if (!fieldId) continue;
+      const allow = role === "lp" ? !!rf["visibleToLP"] : !!rf["visibleToPartners"];
+      if (allow) allowSet.add(fieldId);
+    }
+
+    visibilityCache.set(role, allowSet);
+    return allowSet;
+  } catch (error) {
+    console.error("[lp-server] Failed to load visibility rules", error);
+    return new Set();
+  }
+}
+
+// 4) Visibility: keep only allowed fields
+export async function applyVisibility(
   fields: Record<string, any>,
-  visibility: VisibilityContext | null
-): Record<string, any> {
-  if (!visibility) {
-    return { ...fields };
+  role: Role
+): Promise<Record<string, any>> {
+  if (role === "admin") return { ...fields };
+  const allowSet = await getAllowedFields(role);
+  if (!allowSet || allowSet.size === 0) {
+    return {};
   }
 
-  const { allowedFields, allowedNormalized, ruleCount } = visibility;
-  if (ruleCount === 0) {
-    return { ...fields };
-  }
-
-  const filtered: Record<string, any> = {};
-
-  for (const [key, value] of Object.entries(fields)) {
-    const normalized = normalizeFieldKey(key);
-    if (allowedFields.has(key) || allowedNormalized.has(normalized)) {
-      filtered[key] = value;
-    }
-  }
-
-  return filtered;
+  const kept: Record<string, any> = {};
+  Object.keys(fields).forEach((k) => {
+    if (allowSet.has(k)) kept[k] = fields[k];
+  });
+  return kept;
 }
 
-export async function loadPartnerInvestmentRecords(email: string, role: Role) {
-  const rows = await fetchRowsForEmail(email);
-  const visibility = await resolveVisibility(role);
-  const expanded = await expandPartnerInvestmentRecords(rows);
-
-  const filtered = expanded.map((record) => ({
-    ...record,
-    fields: filterFields((record.fields || {}) as Record<string, any>, visibility),
-  }));
-
-  return { records: filtered, visibility };
-}
-
-function parseNumber(value: any) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === "string") {
-    const cleaned = value.replace(/[^0-9.-]+/g, "");
-    if (!cleaned) return null;
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function findFieldKey(records: ExpandedRecord[], candidates: string[]) {
-  if (!records.length) return undefined;
-  const normalizedCandidates = candidates.map((name) => normalizeFieldKey(name));
-  for (const normalizedCandidate of normalizedCandidates) {
-    if (!normalizedCandidate) continue;
-    for (const record of records) {
-      const fields = record.fields || {};
-      for (const key of Object.keys(fields)) {
-        if (normalizeFieldKey(key) === normalizedCandidate) {
-          return key;
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
-export function computeMetrics(records: ExpandedRecord[]) {
-  const commitmentKey = findFieldKey(records, ["Commitment"]);
-  const totalNavKey = findFieldKey(records, ["Total NAV"]);
-  const currentNavKey = findFieldKey(records, ["Current NAV"]);
-  const distributionsKey = findFieldKey(records, ["Distributions"]);
-  const netMoicKey = findFieldKey(records, ["Net MOIC", "MOIC"]);
-
+// 5) Metrics from visible fields (Total NAV preferred, fallback Current NAV)
+export function computeMetrics(rows: Array<{ fields: any }>) {
   let commitmentTotal = 0;
   let navTotal = 0;
   let distributionsTotal = 0;
-  let netMoicSum = 0;
-  let netMoicCount = 0;
+  let moicSum = 0;
+  let moicCount = 0;
 
-  for (const record of records) {
-    const fields = record.fields || {};
+  for (const r of rows) {
+    const f = r.fields || {};
+    commitmentTotal += num(f["Commitment"]);
+    distributionsTotal += num(f["Distributions"]);
 
-    if (commitmentKey && Object.prototype.hasOwnProperty.call(fields, commitmentKey)) {
-      const value = parseNumber(fields[commitmentKey]);
-      if (value !== null) commitmentTotal += value;
-    }
+    const totalNav = num(f["Total NAV"]);
+    const currentNav = num(f["Current NAV"]);
+    navTotal += totalNav > 0 ? totalNav : currentNav;
 
-    if (totalNavKey && Object.prototype.hasOwnProperty.call(fields, totalNavKey)) {
-      const value = parseNumber(fields[totalNavKey]);
-      if (value !== null) navTotal += value;
-    } else if (currentNavKey && Object.prototype.hasOwnProperty.call(fields, currentNavKey)) {
-      const value = parseNumber(fields[currentNavKey]);
-      if (value !== null) navTotal += value;
-    }
-
-    if (distributionsKey && Object.prototype.hasOwnProperty.call(fields, distributionsKey)) {
-      const value = parseNumber(fields[distributionsKey]);
-      if (value !== null) distributionsTotal += value;
-    }
-
-    if (netMoicKey && Object.prototype.hasOwnProperty.call(fields, netMoicKey)) {
-      const value = parseNumber(fields[netMoicKey]);
-      if (value !== null) {
-        netMoicSum += value;
-        netMoicCount += 1;
-      }
+    const moic = num(f["Net MOIC"]);
+    if (moic > 0) {
+      moicSum += moic;
+      moicCount += 1;
     }
   }
-
-  const netMoicAvg = netMoicCount > 0 ? netMoicSum / netMoicCount : 0;
 
   return {
     commitmentTotal,
     navTotal,
     distributionsTotal,
-    netMoicAvg,
+    netMoicAvg: moicCount ? moicSum / moicCount : 0,
   };
 }
+
+// 6) Profile: derive display name from Contacts
+export function contactDisplayName(contact: { fields: any }) {
+  const f = contact.fields || {};
+  return (
+    f["Name"] ||
+    f["Full Name"] ||
+    f["Primary Contact"] ||
+    f["PRIMARY CONTACT"] ||
+    f["Company"] ||
+    f["Email"] ||
+    "Investor"
+  );
+}
+
+export async function loadLpInvestmentRecords(
+  email: string,
+  role: Role,
+  viewId?: string
+): Promise<{ contacts: ContactRecord[]; records: InvestmentRecord[]; note?: string }> {
+  const contacts = await findContactsByEmail(email);
+  const contactIds = contacts.map((c) => c.id);
+
+  if (!contactIds.length) {
+    return { contacts, records: [], note: "contact-not-found" };
+  }
+
+  const investments = await getInvestmentsForContactIds(contactIds, viewId);
+  const note = !investments.length && viewId ? "view-filtered" : undefined;
+
+  const expanded = await Promise.all(investments.map((record) => expandLinked(record)));
+  const visible = await Promise.all(
+    expanded.map(async (record) => ({
+      ...record,
+      fields: await applyVisibility(record.fields, role),
+    }))
+  );
+
+  return { contacts, records: visible, note };
+}
+
+export type { ContactRecord, InvestmentRecord };

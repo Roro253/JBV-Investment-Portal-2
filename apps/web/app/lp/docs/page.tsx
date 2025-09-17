@@ -17,6 +17,7 @@ interface DocumentItem {
 
 interface DocumentsResponse {
   documents: DocumentItem[];
+  note?: string;
 }
 
 function buildStatusBadge(status: RefreshStatus, lastUpdated: Date | null) {
@@ -71,6 +72,16 @@ function getPeriodSortValue(value: any) {
 
 export default function DocumentsPage() {
   const { data, status, error, initialized, lastUpdated } = usePolling<DocumentsResponse>("/api/lp/documents");
+  const note = data?.note;
+  const noteMessage = useMemo(() => {
+    if (note === "contact-not-found") {
+      return "We couldn’t locate a matching Contact record for your login email. Please reach out to the investor relations team to confirm your access.";
+    }
+    if (note === "view-filtered") {
+      return "Your Airtable view is currently filtering the investment rows tied to your documents. Adjust the view or contact an administrator if this is unexpected.";
+    }
+    return null;
+  }, [note]);
 
   const grouped = useMemo(() => {
     const sections = new Map<
@@ -125,9 +136,15 @@ export default function DocumentsPage() {
         </div>
       ) : null}
 
+      {initialized && noteMessage && status !== "error" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {noteMessage}
+        </div>
+      ) : null}
+
       {!initialized ? (
         <div className="h-64 animate-pulse rounded-2xl bg-gradient-to-br from-slate-200/80 to-slate-100" />
-      ) : !grouped.length ? (
+      ) : !grouped.length && status !== "error" ? (
         <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
           Documents shared with your investments will surface here automatically.
         </div>
