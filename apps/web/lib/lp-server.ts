@@ -35,6 +35,8 @@ async function fetchRowsForEmail(email: string) {
     return [] as AirtableRecord[];
   }
 
+  const recordsById = new Map<string, AirtableRecord>();
+
   for (const builder of EMAIL_FORMULA_BUILDERS) {
     const formula = builder(safeEmail);
     try {
@@ -44,7 +46,9 @@ async function fetchRowsForEmail(email: string) {
           ...(VIEW_ID ? { view: VIEW_ID } : {}),
         })
         .all();
-      return records as AirtableRecord[];
+      for (const record of records) {
+        recordsById.set(record.id, record as AirtableRecord);
+      }
     } catch (error: any) {
       if (isUnknownFieldError(error)) {
         continue;
@@ -53,8 +57,8 @@ async function fetchRowsForEmail(email: string) {
     }
   }
 
-  // If every formula failed due to missing fields, return an empty list.
-  return [] as AirtableRecord[];
+  // Return the combined results (empty if no formulas produced matches).
+  return Array.from(recordsById.values());
 }
 
 type VisibilityContext = {
