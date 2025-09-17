@@ -12,9 +12,16 @@ interface Metrics {
   netMoicAvg: number;
 }
 
+interface Profile {
+  name: string;
+  email: string;
+}
+
 interface LpDataResponse {
   records: ExpandedRecord[];
   metrics: Metrics;
+  profile: Profile;
+  note?: string;
 }
 
 function parseNumber(value: any) {
@@ -139,6 +146,16 @@ export default function LPInvestmentsPage() {
   const [search, setSearch] = useState("");
 
   const records = useMemo(() => data?.records ?? [], [data?.records]);
+  const note = data?.note;
+  const noteMessage = useMemo(() => {
+    if (note === "contact-not-found") {
+      return "We couldn’t locate a matching Contact record for your login email. Please reach out to the investor relations team to confirm your access.";
+    }
+    if (note === "view-filtered") {
+      return "Your Airtable view is currently filtering out investment rows. Adjust the view or contact an administrator if you believe this is unexpected.";
+    }
+    return null;
+  }, [note]);
 
   const columnKeys = useMemo(() => {
     if (!records.length) return [] as string[];
@@ -238,9 +255,15 @@ export default function LPInvestmentsPage() {
         </div>
       ) : null}
 
+      {initialized && noteMessage && status !== "error" ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {noteMessage}
+        </div>
+      ) : null}
+
       {!initialized ? (
         <div className="h-64 animate-pulse rounded-2xl bg-gradient-to-br from-slate-200/80 to-slate-100" />
-      ) : filteredRecords.length === 0 ? (
+      ) : filteredRecords.length === 0 && status !== "error" ? (
         <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
           No investments match your current filters.
         </div>
