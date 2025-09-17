@@ -8,6 +8,9 @@ import createInMemoryAuthAdapter from "./in-memory-auth-adapter";
 
 const MAGIC_LINK_MAX_AGE_SECONDS = 15 * 60; // 15 minutes
 
+const DEFAULT_ADMIN_CREDENTIAL_EMAIL = "jb@jbv.com";
+const DEFAULT_ADMIN_CREDENTIAL_PASSWORD = "admin123";
+
 function normalizeEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -17,6 +20,21 @@ function normalizeEmail(value: string | null | undefined): string | null {
     return null;
   }
   return trimmed.toLowerCase();
+}
+
+function getAdminCredentialEmail(): string {
+  return normalizeEmail(process.env.ADMIN_CREDENTIAL_EMAIL) ?? DEFAULT_ADMIN_CREDENTIAL_EMAIL;
+}
+
+function getAdminCredentialPassword(): string {
+  const raw = process.env.ADMIN_CREDENTIAL_PASSWORD;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return DEFAULT_ADMIN_CREDENTIAL_PASSWORD;
 }
 
 function resolveEmailServer(): EmailConfig["server"] | null {
@@ -79,7 +97,53 @@ function resolveEmailServer(): EmailConfig["server"] | null {
 }
 
 function buildProviders(): NextAuthOptions["providers"] {
-  const providers: NextAuthOptions["providers"] = [];
+  const adminCredentialEmail = getAdminCredentialEmail();
+  const adminCredentialPassword = getAdminCredentialPassword();
+
+  const providers: NextAuthOptions["providers"] = [
+    CredentialsProvider({
+      id: "admin-credentials",
+      name: "Admin Credentials",
+      credentials: {
+        email: {
+          label: "Email",
+          type: "email",
+          placeholder: adminCredentialEmail,
+        },
+        password: {
+          label: "Password",
+          type: "password",
+        },
+      },
+      async authorize(credentials) {
+        const providedEmail = normalizeEmail(credentials?.email);
+        const providedPassword =
+          typeof credentials?.password === "string" ? credentials.password : null;
+
+        if (!providedEmail || !providedPassword) {
+          return null;
+        }
+
+        if (providedEmail !== adminCredentialEmail) {
+          console.warn(`[auth] Admin credential sign-in rejected for unauthorized email: ${providedEmail}`);
+          return null;
+        }
+
+        if (providedPassword !== adminCredentialPassword) {
+          console.warn(`[auth] Admin credential sign-in rejected due to invalid password for: ${providedEmail}`);
+          return null;
+        }
+
+        return {
+          id: providedEmail,
+          email: providedEmail,
+          name: "Admin",
+        };
+      },
+    }),
+  ];
+
+  let hasAdditionalProviders = false;
 
   const emailServer = resolveEmailServer();
   const emailFrom = process.env.EMAIL_FROM?.trim();
@@ -94,6 +158,7 @@ function buildProviders(): NextAuthOptions["providers"] {
         },
       })
     );
+    hasAdditionalProviders = true;
   } else if (emailServer && !emailFrom) {
     console.warn("[auth] EMAIL_FROM must be configured to send magic link emails.");
   }
@@ -105,9 +170,10 @@ function buildProviders(): NextAuthOptions["providers"] {
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       })
     );
+    hasAdditionalProviders = true;
   }
 
-  if (providers.length === 0) {
+  if (!hasAdditionalProviders) {
     const allowedEmails = new Set(getAdminEmails());
     const devEmails = (process.env.DEV_LOGIN_EMAILS || "")
       .split(",")
@@ -174,11 +240,13 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === "email") {
+      if (account?.provider === "email" || account?.provider === "admin-credentials") {
         const candidateEmail = normalizeEmail(user?.email ?? account.providerAccountId);
         if (!candidateEmail || !isAdmin(candidateEmail)) {
           const attemptedEmail = user?.email ?? account?.providerAccountId ?? "<unknown>";
-          console.warn(`[auth] Magic link request rejected for unauthorized email: ${attemptedEmail}`);
+          console.warn(
+            `[auth] Sign-in rejected for unauthorized email: ${attemptedEmail} (provider: ${account?.provider ?? "<unknown>"})`
+          );
           return false;
         }
       }
