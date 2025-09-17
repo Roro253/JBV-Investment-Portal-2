@@ -3,8 +3,10 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isAdmin } from "@/lib/auth-helpers";
 
+const AUTH_SECRET = process.env.NEXTAUTH_SECRET || "development-secret";
+
 async function ensureAuthenticated(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req, secret: AUTH_SECRET });
   return token;
 }
 
