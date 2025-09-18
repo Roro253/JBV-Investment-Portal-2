@@ -96,7 +96,7 @@ export const authOptions: NextAuthOptions = {
           subject: "Your JBV LP Portal sign-in link",
           html,
           text,
-          mailSettings: {
+          trackingSettings: {
             clickTracking: { enable: false, enableText: false },
             openTracking: { enable: false },
           },
