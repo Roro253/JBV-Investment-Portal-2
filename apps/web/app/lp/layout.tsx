@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const NAV_ITEMS = [
   { href: "/lp", label: "Overview" },
+  { href: "/lp/updates", label: "JBV Updates" },
   { href: "/lp/investments", label: "Investments" },
   { href: "/lp/docs", label: "Documents" },
   { href: "/lp/help", label: "Help" },
