@@ -18,3 +18,34 @@ body {
   @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs bg-white;
 }
 
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  color: #0f172a;
+}
+
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) :is(h1, h2, h3, h4, h5, h6, p, span, li, small, strong, em) {
+  color: inherit;
+}
+
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) a {
+  color: #1d4ed8;
+}
+
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) a:hover,
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) a:focus-visible {
+  color: #1e40af;
+}
+
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) .card {
+  background-color: rgba(255, 255, 255, 0.96);
+  border-color: rgba(37, 99, 235, 0.2);
+  box-shadow: 0 18px 45px -25px rgba(37, 99, 235, 0.35);
+  color: inherit;
+}
+
+:is(#FounderSpotlights, [data-section="FounderSpotlights"]) .chip {
+  background-color: rgba(191, 219, 254, 0.8);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #0f172a;
+}
+
