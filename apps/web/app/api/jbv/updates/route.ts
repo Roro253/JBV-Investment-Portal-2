@@ -32,7 +32,14 @@ const FIELDS = [
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
   url.searchParams.set("view", AIRTABLE_VIEW);
-  url.searchParams.set("filterByFormula", "Portal");
+  // Only include records that are marked for the portal in Airtable.
+  // Airtable formulas must reference fields using curly braces, otherwise
+  // the API responds with a 422 ("Unknown field name") error. The previous
+  // implementation was sending `filterByFormula=Portal`, which Airtable
+  // interpreted as a formula referencing a non-existent field named "Portal".
+  // Using `{Portal}` correctly references the field so that the filter works
+  // and the request no longer fails.
+  url.searchParams.set("filterByFormula", "{Portal}");
   const offset = searchParams.get("offset");
   if (offset) url.searchParams.set("offset", offset);
   FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
