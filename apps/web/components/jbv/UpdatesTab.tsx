@@ -173,7 +173,31 @@ export default function UpdatesTab() {
         cache: "no-store",
       });
       if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
+        let message = `Request failed with status ${response.status}`;
+        try {
+          const errorPayload = await response.json();
+          if (typeof errorPayload?.error === "string" && errorPayload.error.trim()) {
+            message = errorPayload.error.trim();
+          } else if (
+            errorPayload?.error?.message &&
+            typeof errorPayload.error.message === "string" &&
+            errorPayload.error.message.trim()
+          ) {
+            message = errorPayload.error.message.trim();
+          }
+          if (errorPayload?.detail) {
+            const detailText =
+              typeof errorPayload.detail === "string"
+                ? errorPayload.detail
+                : JSON.stringify(errorPayload.detail);
+            if (detailText && detailText !== message) {
+              message = `${message}: ${detailText}`;
+            }
+          }
+        } catch (jsonError) {
+          // Ignore JSON parsing errors and fall back to the default message
+        }
+        throw new Error(message);
       }
       const data = (await response.json()) as AirtableResponse;
       setRecords((previous) => (cursor ? [...previous, ...(data.records || [])] : data.records || []));

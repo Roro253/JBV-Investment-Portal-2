@@ -32,7 +32,7 @@ const FIELDS = [
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
   url.searchParams.set("view", AIRTABLE_VIEW);
-  url.searchParams.set("filterByFormula", "Portal");
+  url.searchParams.set("filterByFormula", "{Portal}");
   const offset = searchParams.get("offset");
   if (offset) url.searchParams.set("offset", offset);
   FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
@@ -69,8 +69,16 @@ export async function GET(request: Request) {
 
   const response = await fetchAirtable(url);
   if (!response.ok) {
-    const detail = await response.text();
-    return NextResponse.json({ error: "Airtable error", detail }, { status: response.status });
+    const detailText = await response.text();
+    try {
+      const parsed = JSON.parse(detailText);
+      const message =
+        (typeof parsed?.error === "string" && parsed.error) ||
+        (parsed?.error?.message && typeof parsed.error.message === "string" ? parsed.error.message : "Airtable error");
+      return NextResponse.json({ error: message, detail: parsed }, { status: response.status });
+    } catch (error) {
+      return NextResponse.json({ error: "Airtable error", detail: detailText }, { status: response.status });
+    }
   }
 
   const payload = await response.json();
