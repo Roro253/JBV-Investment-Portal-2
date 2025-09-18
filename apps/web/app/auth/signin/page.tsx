@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, Suspense, useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
@@ -112,6 +113,18 @@ function SignInForm() {
               {errorMessage || queryError}
             </div>
           )}
+
+          <p className="text-xs text-slate-500">
+            By logging in, you acknowledge that you have read and agree to the {" "}
+            <Link className="font-semibold text-blue-600 hover:underline" href="/terms-of-use">
+              Terms of Use
+            </Link>{" "}
+            and that you have reviewed the {" "}
+            <Link className="font-semibold text-blue-600 hover:underline" href="/privacy-policy">
+              Privacy Policy
+            </Link>
+            .
+          </p>
 
           <p className="text-xs text-slate-500">
             Need assistance? Contact your JBV relationship manager or email
