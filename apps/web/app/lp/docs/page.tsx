@@ -71,7 +71,9 @@ function getPeriodSortValue(value: any) {
 }
 
 export default function DocumentsPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<DocumentsResponse>("/api/lp/documents");
+  const { data, status, error, initialized, lastUpdated } = usePolling<DocumentsResponse>("/api/lp/documents", {
+    interval: 120000,
+  });
   const note = data?.note;
   const noteMessage = useMemo(() => {
     if (note === "contact-not-found") {

@@ -150,7 +150,9 @@ function formatValue(key: string, value: any) {
 }
 
 export default function LPInvestmentsPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
+  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data", {
+    interval: 120000,
+  });
   const [search, setSearch] = useState("");
 
   const records = useMemo(() => data?.records ?? [], [data?.records]);

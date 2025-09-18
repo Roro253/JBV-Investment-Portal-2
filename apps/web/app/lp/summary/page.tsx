@@ -214,7 +214,9 @@ function renderFieldValue(recordId: string, field: string, value: any) {
 }
 
 export default function InvestmentSummaryPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<SummaryResponse>("/api/lp/summary");
+  const { data, status, error, initialized, lastUpdated } = usePolling<SummaryResponse>("/api/lp/summary", {
+    interval: 120000,
+  });
 
   const fieldOrder = useMemo(() => data?.fieldOrder ?? [], [data?.fieldOrder]);
   const records = useMemo(() => data?.records ?? [], [data?.records]);
