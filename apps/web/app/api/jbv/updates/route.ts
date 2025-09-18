@@ -32,7 +32,7 @@ const FIELDS = [
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
   url.searchParams.set("view", AIRTABLE_VIEW);
-  url.searchParams.set("filterByFormula", "Portal");
+  url.searchParams.set("filterByFormula", "{Portal}");
   const offset = searchParams.get("offset");
   if (offset) url.searchParams.set("offset", offset);
   FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
