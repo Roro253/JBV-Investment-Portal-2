@@ -6,9 +6,13 @@ import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  CredentialsSignin: "We couldn't find that email in our investor records.",
   AccessDenied: "You do not have permission to access this area.",
+  Verification: "That sign-in link is no longer valid. Request a new one.",
+  EmailSignin: "We were unable to verify that link. Request a new one.",
 };
+
+const SUCCESS_MESSAGE =
+  "If your email is registered, we've sent a sign-in link. Please check your inbox and spam folder.";
 
 export default function SignInPage() {
   return (
@@ -21,8 +25,8 @@ export default function SignInPage() {
 function SignInForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "submitting">("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "submitting" | "success">("idle");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const callbackUrl = searchParams?.get("callbackUrl") || "/lp";
 
@@ -35,37 +39,25 @@ function SignInForm() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus("submitting");
-    setErrorMessage(null);
+    setStatusMessage(null);
 
     try {
-      const result = await signIn("credentials", {
+      const result = await signIn("email", {
         email,
         callbackUrl,
         redirect: false,
       });
 
-      if (!result) {
-        setErrorMessage("Unexpected authentication response. Please try again.");
-        return;
+      if (result?.error) {
+        console.error("[auth] Magic link request returned an error", result.error);
       }
 
-      if (result.error) {
-        const friendly = ERROR_MESSAGES[result.error] || "We couldn't verify that email.";
-        setErrorMessage(friendly);
-        return;
-      }
-
-      if (result.url) {
-        window.location.href = result.url;
-        return;
-      }
-
-      window.location.href = callbackUrl;
+      setStatus("success");
+      setStatusMessage(SUCCESS_MESSAGE);
     } catch (error) {
       console.error("[auth] Email sign-in failed", error);
-      setErrorMessage("We couldn't verify that email. Please try again or contact support.");
-    } finally {
-      setStatus("idle");
+      setStatus("success");
+      setStatusMessage(SUCCESS_MESSAGE);
     }
   };
 
@@ -93,7 +85,13 @@ function SignInForm() {
                 type="email"
                 required
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (status === "success") {
+                    setStatus("idle");
+                    setStatusMessage(null);
+                  }
+                }}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 placeholder="you@example.com"
                 autoComplete="email"
@@ -104,13 +102,26 @@ function SignInForm() {
               disabled={!email || status === "submitting"}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
-              {status === "submitting" ? "Signing in…" : "Continue"}
+              {status === "submitting"
+                ? "Sending…"
+                : status === "success"
+                  ? "Resend link"
+                  : "Send sign-in link"}
             </button>
           </form>
 
-          {(errorMessage || queryError) && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-              {errorMessage || queryError}
+          {(statusMessage || queryError) && (
+            <div className="space-y-2">
+              {statusMessage && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                  {statusMessage}
+                </div>
+              )}
+              {queryError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {queryError}
+                </div>
+              )}
             </div>
           )}
 
