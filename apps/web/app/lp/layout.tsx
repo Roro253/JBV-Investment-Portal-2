@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/lp", label: "Overview" },
   { href: "/lp/investments", label: "Investments" },
   { href: "/lp/docs", label: "Documents" },
+  { href: "/lp/updates", label: "JBV Updates" },
   { href: "/lp/help", label: "Help" },
   { href: "/lp/summary", label: "Investment Summary" },
 ];
