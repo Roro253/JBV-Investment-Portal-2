@@ -6,9 +6,10 @@ import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  CredentialsSignin: "We couldn't find that email in our investor records.",
-  AccessDenied: "You do not have permission to access this area.",
+  Configuration: "We were unable to process your request. Please try again.",
+  AccessDenied: "We couldn't sign you in. Please try again.",
 };
+const CONFIRMATION_MESSAGE = "If your email is registered, we've sent a sign-in link.";
 
 export default function SignInPage() {
   return (
@@ -23,6 +24,7 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   const callbackUrl = searchParams?.get("callbackUrl") || "/lp";
 
@@ -38,34 +40,26 @@ function SignInForm() {
     setErrorMessage(null);
 
     try {
-      const result = await signIn("credentials", {
+      const result = await signIn("email", {
         email,
         callbackUrl,
         redirect: false,
       });
 
-      if (!result) {
-        setErrorMessage("Unexpected authentication response. Please try again.");
-        return;
-      }
-
-      if (result.error) {
-        const friendly = ERROR_MESSAGES[result.error] || "We couldn't verify that email.";
+      if (result?.status === 429) {
+        setErrorMessage("Too many sign-in requests. Please try again later.");
+      } else if (result?.error) {
+        const friendly = ERROR_MESSAGES[result.error] || "We couldn't send the sign-in link. Please try again.";
         setErrorMessage(friendly);
-        return;
+      } else if (result && result.ok === false) {
+        setErrorMessage("We couldn't send the sign-in link. Please try again.");
       }
-
-      if (result.url) {
-        window.location.href = result.url;
-        return;
-      }
-
-      window.location.href = callbackUrl;
     } catch (error) {
-      console.error("[auth] Email sign-in failed", error);
-      setErrorMessage("We couldn't verify that email. Please try again or contact support.");
+      console.error("[auth] Email sign-in request failed", error);
+      setErrorMessage("We couldn't send the sign-in link. Please try again or contact support.");
     } finally {
       setStatus("idle");
+      setHasSubmitted(true);
     }
   };
 
@@ -104,9 +98,15 @@ function SignInForm() {
               disabled={!email || status === "submitting"}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
-              {status === "submitting" ? "Signing in…" : "Continue"}
+              {status === "submitting" ? "Sending link…" : "Send sign-in link"}
             </button>
           </form>
+
+          {(hasSubmitted || queryError) && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-slate-700">
+              {CONFIRMATION_MESSAGE}
+            </div>
+          )}
 
           {(errorMessage || queryError) && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
