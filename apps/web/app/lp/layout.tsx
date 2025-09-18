@@ -158,14 +158,9 @@ export default function LPLayout({ children }: { children: ReactNode }) {
 }
 
 function PolicyAcknowledgementOverlay({ onAccept }: { onAccept: () => void }) {
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (termsAccepted && privacyAcknowledged) {
-      onAccept();
-    }
+    onAccept();
   };
 
   return (
@@ -186,43 +181,24 @@ function PolicyAcknowledgementOverlay({ onAccept }: { onAccept: () => void }) {
           </p>
         </div>
         <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-3">
-            <label className="flex items-start gap-3 text-sm text-slate-700">
-              <input
-                checked={termsAccepted}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                onChange={(event) => setTermsAccepted(event.target.checked)}
-                required
-                type="checkbox"
-              />
-              <span>
-                I have read and agree to the {" "}
-                <Link className="font-semibold text-blue-600 hover:underline" href="/terms-of-use">
-                  Terms of Use
-                </Link>
-                .
-              </span>
-            </label>
-            <label className="flex items-start gap-3 text-sm text-slate-700">
-              <input
-                checked={privacyAcknowledged}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                onChange={(event) => setPrivacyAcknowledged(event.target.checked)}
-                required
-                type="checkbox"
-              />
-              <span>
-                I acknowledge that I have reviewed the {" "}
-                <Link className="font-semibold text-blue-600 hover:underline" href="/privacy-policy">
-                  Privacy Policy
-                </Link>
-                .
-              </span>
-            </label>
+          <div className="space-y-3 text-sm text-slate-700">
+            <p>
+              By continuing, you acknowledge that you have read and agree to the {" "}
+              <Link className="font-semibold text-blue-600 hover:underline" href="/terms-of-use">
+                Terms of Use
+              </Link>
+              .
+            </p>
+            <p>
+              You also acknowledge that you have reviewed the {" "}
+              <Link className="font-semibold text-blue-600 hover:underline" href="/privacy-policy">
+                Privacy Policy
+              </Link>
+              .
+            </p>
           </div>
           <button
             className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-blue-300"
-            disabled={!termsAccepted || !privacyAcknowledged}
             type="submit"
           >
             Acknowledge &amp; Continue

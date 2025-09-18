@@ -242,7 +242,7 @@ export default function InvestmentSummaryPage() {
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Investment Summary</h2>
           <p className="text-sm text-slate-500">
-            Consolidated view of your commitments, valuations, and partner updates from Airtable.
+            Consolidated view of your commitments, valuations, and updates.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
