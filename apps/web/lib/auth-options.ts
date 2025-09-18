@@ -141,10 +141,20 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user }) {
       logAuthEvent("magic_link.verified", user.email);
     },
-    async error(message) {
+  },
+  logger: {
+    error(code, metadata) {
+      const details =
+        metadata instanceof Error
+          ? metadata
+          : typeof metadata === "object" && metadata && "error" in metadata && metadata.error instanceof Error
+            ? metadata.error
+            : undefined;
+
       logAuthEvent("magic_link.failure", undefined, {
-        error: message?.name ?? "Unknown",
-        description: message?.message,
+        code,
+        error: details?.name ?? "Unknown",
+        description: details?.message,
       });
     },
   },
