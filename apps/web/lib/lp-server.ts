@@ -3,7 +3,13 @@ import Bottleneck from "bottleneck";
 import type { Role } from "@/lib/auth-helpers";
 import { normalizeFieldKey } from "@/lib/airtable-shared";
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY! }).base(
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY || process.env.AIRTABLE_PAT;
+
+if (!AIRTABLE_API_KEY) {
+  throw new Error("Missing Airtable API key. Set AIRTABLE_API_KEY or AIRTABLE_PAT.");
+}
+
+const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(
   process.env.AIRTABLE_BASE_ID!
 );
 const limiter = new Bottleneck({ minTime: 220 });
