@@ -154,8 +154,12 @@ export default function InvestmentDetailPage() {
   const idParam = params?.id;
   const investmentId = Array.isArray(idParam) ? idParam[0] : idParam;
 
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
-  const { data: docData } = usePolling<DocumentsResponse>("/api/lp/documents");
+  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data", {
+    interval: 120000,
+  });
+  const { data: docData } = usePolling<DocumentsResponse>("/api/lp/documents", {
+    interval: 120000,
+  });
 
   const record = useMemo(() => {
     return data?.records.find((item) => item.id === investmentId);

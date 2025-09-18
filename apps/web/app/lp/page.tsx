@@ -144,7 +144,9 @@ function resolveDisplayName(record: ExpandedRecord, fallback = "Unnamed Investme
 }
 
 export default function LPDashboardPage() {
-  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data");
+  const { data, status, error, initialized, lastUpdated } = usePolling<LpDataResponse>("/api/lp/data", {
+    interval: 120000,
+  });
 
   const records = useMemo(() => data?.records ?? [], [data?.records]);
   const metrics = data?.metrics ?? {
