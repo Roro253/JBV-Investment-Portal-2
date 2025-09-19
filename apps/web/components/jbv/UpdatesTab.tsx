@@ -104,7 +104,14 @@ const renderPlainText = (value: string) => {
 };
 
 const resolveCompanyName = (record: AirtableRecord) => {
-  const candidates = ["Company", "Company Name", "Startup", "Company Display", "Send Update"];
+  const candidates = [
+    "Company",
+    "Company New",
+    "Company Name",
+    "Startup",
+    "Company Display",
+    "Send Update",
+  ];
   for (const key of candidates) {
     const raw = field(record, key);
     if (!raw) continue;
@@ -138,11 +145,14 @@ const resolveCompanyName = (record: AirtableRecord) => {
 };
 
 const getLogo = (record: AirtableRecord): AirtableAttachment | undefined => {
-  const logoField = field(record, "Logo");
-  if (Array.isArray(logoField) && logoField.length > 0) {
-    const attachment = logoField[0];
-    if (attachment && typeof attachment === "object" && "url" in attachment) {
-      return attachment as AirtableAttachment;
+  const fieldCandidates = ["Logo", "Logo (from Target Securities)"];
+  for (const fieldName of fieldCandidates) {
+    const logoField = field(record, fieldName);
+    if (Array.isArray(logoField) && logoField.length > 0) {
+      const attachment = logoField[0];
+      if (attachment && typeof attachment === "object" && "url" in attachment) {
+        return attachment as AirtableAttachment;
+      }
     }
   }
   return undefined;
