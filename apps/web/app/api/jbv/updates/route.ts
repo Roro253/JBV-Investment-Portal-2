@@ -5,82 +5,51 @@ export const dynamic = "force-dynamic";
 
 const AIRTABLE_BASE = "appAswQzYFHzmwqGH";
 const AIRTABLE_TABLE = "tblW2f8O3p6yhJBeE";
-const AIRTABLE_VIEW = "viwVZZ9vksLZQ8GBG";
+const AIRTABLE_VIEW_ID = "viwVZZ9vksLZQ8GBG";
 
 const AIRTABLE_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${AIRTABLE_TABLE}`;
 
-const FIELDS = [
-  "Portal",
-  "Post Date",
-  "Company",
-  "Send Update",
-  "Type",
-  "Data Room",
-  "Subject",
-  "Content",
-  "Content Att",
-  "Contacts",
-  "Partner Names",
-  "Partner Emails",
-  "Partner List",
-  "Logo",
-  "Update PDF",
-  "Notes",
-  "Assignee",
-];
-
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
-  url.searchParams.set("view", AIRTABLE_VIEW);
-  url.searchParams.set("filterByFormula", "{Portal}");
+
+  // Use the view ID to inherit Airtable filtering/sorting configuration.
+  url.searchParams.set("view", AIRTABLE_VIEW_ID);
+
   const offset = searchParams.get("offset");
-  if (offset) url.searchParams.set("offset", offset);
-  FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
-  url.searchParams.append("sort[0][field]", "Post Date");
-  url.searchParams.append("sort[0][direction]", "desc");
+  if (offset) {
+    url.searchParams.set("offset", offset);
+  }
+
   return url.toString();
 }
 
-async function fetchAirtable(url: string, tries = 3): Promise<Response> {
-  for (let index = 0; index < tries; index += 1) {
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
-      },
-      next: { revalidate: 60 },
-    });
-    if (response.status !== 429) return response;
-    await new Promise((resolve) => setTimeout(resolve, 500 * (index + 1)));
-  }
-  return fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
-    },
-  });
-}
-
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   if (!process.env.AIRTABLE_API_KEY) {
     return NextResponse.json({ error: "Missing AIRTABLE_API_KEY" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
+  const { searchParams } = new URL(req.url);
   const url = buildUrl(searchParams);
 
-  const response = await fetchAirtable(url);
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` },
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+
   if (!response.ok) {
-    const detailText = await response.text();
     try {
-      const parsed = JSON.parse(detailText);
-      const message =
-        (typeof parsed?.error === "string" && parsed.error) ||
-        (parsed?.error?.message && typeof parsed.error.message === "string" ? parsed.error.message : "Airtable error");
-      return NextResponse.json({ error: message, detail: parsed }, { status: response.status });
-    } catch (error) {
-      return NextResponse.json({ error: "Airtable error", detail: detailText }, { status: response.status });
+      const json = JSON.parse(text);
+      return NextResponse.json({ error: "Airtable error", detail: json }, { status: response.status });
+    } catch {
+      return NextResponse.json({ error: "Airtable error", detail: text }, { status: response.status });
     }
   }
 
-  const payload = await response.json();
-  return NextResponse.json(payload);
+  try {
+    return NextResponse.json(JSON.parse(text));
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON from Airtable", body: text }, { status: 502 });
+  }
 }
