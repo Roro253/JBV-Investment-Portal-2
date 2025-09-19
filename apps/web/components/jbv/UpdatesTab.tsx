@@ -50,6 +50,37 @@ const ensureHttp = (value?: string | null) => {
   return `https://${value}`;
 };
 
+const normalizeContentValue = (input: unknown): string => {
+  if (input === null || input === undefined) return "";
+  if (typeof input === "string") return input;
+  if (Array.isArray(input)) {
+    return input
+      .map((item) => {
+        if (item === null || item === undefined) return "";
+        if (typeof item === "string") return item;
+        if (typeof item === "object" && "text" in item && typeof (item as { text?: unknown }).text === "string") {
+          return (item as { text?: string }).text ?? "";
+        }
+        try {
+          return String(item);
+        } catch {
+          return "";
+        }
+      })
+      .filter((item) => item && item.trim())
+      .join("\n");
+  }
+  if (typeof input === "object" && "text" in (input as { text?: unknown })) {
+    const maybeText = (input as { text?: unknown }).text;
+    if (typeof maybeText === "string") return maybeText;
+  }
+  try {
+    return String(input);
+  } catch {
+    return "";
+  }
+};
+
 const toTextArray = (value: unknown): string[] => {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -88,12 +119,14 @@ const initialsFromName = (name?: string) => {
   return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || (parts[0]?.slice(0, 2) ?? "JB").toUpperCase();
 };
 
-const renderPlainText = (value: string) => {
-  const safe = value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  const linkified = safe.replace(
+const renderPlainText = (value: unknown) => {
+  const raw = normalizeContentValue(value);
+  const escapeHtml = (input: string) =>
+    input
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const linkified = escapeHtml(raw).replace(
     /(https?:\/\/[^\s]+)/g,
     '<a class="text-blue-600 underline decoration-blue-200 transition hover:text-blue-700" target="_blank" rel="noreferrer noopener" href="$1">$1</a>',
   );
@@ -148,9 +181,10 @@ const getLogo = (record: AirtableRecord): AirtableAttachment | undefined => {
   return undefined;
 };
 
-const getPreviewText = (value?: string) => {
-  if (!value) return "";
-  const trimmed = value.trim();
+const getPreviewText = (value: unknown) => {
+  const normalized = normalizeContentValue(value);
+  if (!normalized) return "";
+  const trimmed = normalized.trim();
   if (trimmed.length <= 180) return trimmed;
   return `${trimmed.slice(0, 177)}...`;
 };
@@ -167,43 +201,40 @@ export default function UpdatesTab() {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams();
-      if (cursor) params.set("offset", cursor);
-      const response = await fetch(`/api/jbv/updates${params.size ? `?${params.toString()}` : ""}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        let message = `Request failed with status ${response.status}`;
-        try {
-          const errorPayload = await response.json();
-          if (typeof errorPayload?.error === "string" && errorPayload.error.trim()) {
-            message = errorPayload.error.trim();
-          } else if (
-            errorPayload?.error?.message &&
-            typeof errorPayload.error.message === "string" &&
-            errorPayload.error.message.trim()
-          ) {
-            message = errorPayload.error.message.trim();
-          }
-          if (errorPayload?.detail) {
-            const detailText =
-              typeof errorPayload.detail === "string"
-                ? errorPayload.detail
-                : JSON.stringify(errorPayload.detail);
-            if (detailText && detailText !== message) {
-              message = `${message}: ${detailText}`;
-            }
-          }
-        } catch (jsonError) {
-          // Ignore JSON parsing errors and fall back to the default message
-        }
-        throw new Error(message);
+
+      const url = new URL("/api/jbv/updates", window.location.origin);
+      if (cursor) {
+        url.searchParams.set("offset", cursor);
       }
-      const data = (await response.json()) as AirtableResponse;
-      setRecords((previous) => (cursor ? [...previous, ...(data.records || [])] : data.records || []));
-      setOffset(data.offset ?? null);
-    } catch (err: any) {
-      setError(err?.message || "Unable to load updates");
+
+      const response = await fetch(url.toString());
+      const text = await response.text();
+
+      if (!response.ok) {
+        try {
+          const parsed = JSON.parse(text);
+          const message =
+            parsed?.detail?.error?.message ||
+            parsed?.error?.message ||
+            parsed?.error ||
+            text;
+          throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+        } catch {
+          throw new Error(text || `Fetch failed: ${response.status}`);
+        }
+      }
+
+      const data = JSON.parse(text) as Partial<AirtableResponse> | null;
+      const recordsList = data?.records;
+
+      if (!recordsList || !Array.isArray(recordsList)) {
+        throw new Error("Unexpected response shape from /api/jbv/updates (no records array)");
+      }
+
+      setRecords((previous) => (cursor ? [...previous, ...recordsList] : recordsList));
+      setOffset(typeof data?.offset === "string" ? data.offset : null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -300,24 +331,25 @@ function UpdateCard({ record }: { record: AirtableRecord }) {
   const typeList = toTextArray(field(record, "Type"));
   const postDate = field(record, "Post Date") as string | undefined;
   const companyName = useMemo(() => resolveCompanyName(record), [record]);
-  const content = field(record, "Content") as string | undefined;
+  const rawContent = field(record, "Content");
+  const content = useMemo(() => normalizeContentValue(rawContent), [rawContent]);
   const dataRoom = ensureHttp(field(record, "Data Room") as string | undefined);
-  const updatePdf = (() => {
+  const updatePdf = useMemo(() => {
     const attachments = field(record, "Update PDF");
-    if (Array.isArray(attachments) && attachments.length > 0) {
-      const candidate = attachments[0];
+    if (!Array.isArray(attachments)) return undefined;
+    for (const candidate of attachments) {
       if (candidate && typeof candidate === "object" && "url" in candidate) {
         return candidate as AirtableAttachment;
       }
     }
     return undefined;
-  })();
+  }, [record]);
   const contentAttachments = useMemo(() => {
     const attachments = field(record, "Content Att");
-    if (Array.isArray(attachments)) {
-      return attachments.filter((item): item is AirtableAttachment => Boolean(item && typeof item === "object" && "url" in item));
-    }
-    return [];
+    if (!Array.isArray(attachments)) return [];
+    return attachments.filter(
+      (item): item is AirtableAttachment => Boolean(item && typeof item === "object" && "url" in item),
+    );
   }, [record]);
   const partnerNames = toTextArray(field(record, "Partner Names"));
   const partnerEmails = toTextArray(field(record, "Partner Emails"));
@@ -326,7 +358,11 @@ function UpdateCard({ record }: { record: AirtableRecord }) {
 
   const preview = useMemo(() => getPreviewText(content), [content]);
 
-  const summaryHtml = useMemo(() => (content ? renderPlainText(content) : null), [content]);
+  const summaryHtml = useMemo(() => {
+    const normalized = content.trim();
+    if (!normalized) return null;
+    return renderPlainText(content);
+  }, [content]);
 
   const showPartnerSection = partnerNames.length > 0 || partnerEmails.length > 0 || partnerList.length > 0 || contactNames.length > 0;
 
