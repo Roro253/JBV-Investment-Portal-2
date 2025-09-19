@@ -10,7 +10,6 @@ const AIRTABLE_VIEW = "viwVZZ9vksLZQ8GBG";
 const AIRTABLE_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${AIRTABLE_TABLE}`;
 
 const FIELDS = [
-  "Portal",
   "Post Date",
   "Company",
   "New Investment Button",
@@ -37,7 +36,6 @@ const FIELDS = [
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
   url.searchParams.set("view", AIRTABLE_VIEW);
-  url.searchParams.set("filterByFormula", "{Portal}");
   const offset = searchParams.get("offset");
   if (offset) url.searchParams.set("offset", offset);
   FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
