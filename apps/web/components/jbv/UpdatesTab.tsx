@@ -50,6 +50,47 @@ const ensureHttp = (value?: string | null) => {
   return `https://${value}`;
 };
 
+const normalizeContentField = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeContentField(item))
+      .filter((item) => item.trim())
+      .join("\n\n");
+  }
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const candidateKeys = ["text", "value", "name", "title", "content", "label", "displayName"] as const;
+    for (const key of candidateKeys) {
+      const candidate = record[key];
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+      if (typeof candidate === "number" || typeof candidate === "bigint" || typeof candidate === "boolean") {
+        return String(candidate);
+      }
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      try {
+        return String(value);
+      } catch {
+        return "";
+      }
+    }
+  }
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
+};
+
 const toTextArray = (value: unknown): string[] => {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -88,8 +129,9 @@ const initialsFromName = (name?: string) => {
   return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || (parts[0]?.slice(0, 2) ?? "JB").toUpperCase();
 };
 
-const renderPlainText = (value: string) => {
-  const safe = value
+const renderPlainText = (value: unknown) => {
+  const normalized = normalizeContentField(value);
+  const safe = normalized
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
@@ -148,9 +190,9 @@ const getLogo = (record: AirtableRecord): AirtableAttachment | undefined => {
   return undefined;
 };
 
-const getPreviewText = (value?: string) => {
-  if (!value) return "";
-  const trimmed = value.trim();
+const getPreviewText = (value: unknown) => {
+  const normalized = normalizeContentField(value);
+  const trimmed = normalized.trim();
   if (trimmed.length <= 180) return trimmed;
   return `${trimmed.slice(0, 177)}...`;
 };
@@ -167,43 +209,61 @@ export default function UpdatesTab() {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams();
-      if (cursor) params.set("offset", cursor);
-      const response = await fetch(`/api/jbv/updates${params.size ? `?${params.toString()}` : ""}`, {
-        cache: "no-store",
-      });
+
+      const url = new URL("/api/jbv/updates", window.location.origin);
+      if (cursor) {
+        url.searchParams.set("offset", cursor);
+      }
+
+      const response = await fetch(url.toString());
+      const text = await response.text();
+
       if (!response.ok) {
-        let message = `Request failed with status ${response.status}`;
+        let message: unknown = text || `Fetch failed: ${response.status}`;
         try {
-          const errorPayload = await response.json();
-          if (typeof errorPayload?.error === "string" && errorPayload.error.trim()) {
-            message = errorPayload.error.trim();
-          } else if (
-            errorPayload?.error?.message &&
-            typeof errorPayload.error.message === "string" &&
-            errorPayload.error.message.trim()
-          ) {
-            message = errorPayload.error.message.trim();
-          }
-          if (errorPayload?.detail) {
-            const detailText =
-              typeof errorPayload.detail === "string"
-                ? errorPayload.detail
-                : JSON.stringify(errorPayload.detail);
-            if (detailText && detailText !== message) {
-              message = `${message}: ${detailText}`;
+          const payload = JSON.parse(text);
+          message =
+            payload?.detail?.error?.message ??
+            payload?.error?.message ??
+            payload?.error ??
+            message;
+        } catch {
+          // Ignore JSON parse errors and use the fallback message
+        }
+
+        let finalMessage: string;
+        if (typeof message === "string" && message.trim()) {
+          finalMessage = message;
+        } else {
+          try {
+            const stringified = JSON.stringify(message);
+            if (typeof stringified === "string" && stringified.trim()) {
+              finalMessage = stringified;
+            } else {
+              finalMessage = text || `Fetch failed: ${response.status}`;
+            }
+          } catch {
+            try {
+              const stringified = String(message);
+              finalMessage = stringified && stringified !== "[object Object]" ? stringified : text || `Fetch failed: ${response.status}`;
+            } catch {
+              finalMessage = text || `Fetch failed: ${response.status}`;
             }
           }
-        } catch (jsonError) {
-          // Ignore JSON parsing errors and fall back to the default message
         }
-        throw new Error(message);
+
+        throw new Error(finalMessage);
       }
-      const data = (await response.json()) as AirtableResponse;
-      setRecords((previous) => (cursor ? [...previous, ...(data.records || [])] : data.records || []));
+
+      const data = JSON.parse(text) as AirtableResponse;
+      if (!data || !Array.isArray(data.records)) {
+        throw new Error("Unexpected response shape from /api/jbv/updates (no records array)");
+      }
+
+      setRecords((previous) => (cursor ? [...previous, ...data.records] : data.records));
       setOffset(data.offset ?? null);
-    } catch (err: any) {
-      setError(err?.message || "Unable to load updates");
+    } catch (error: any) {
+      setError(error?.message || "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -300,33 +360,34 @@ function UpdateCard({ record }: { record: AirtableRecord }) {
   const typeList = toTextArray(field(record, "Type"));
   const postDate = field(record, "Post Date") as string | undefined;
   const companyName = useMemo(() => resolveCompanyName(record), [record]);
-  const content = field(record, "Content") as string | undefined;
+  const rawContent = field(record, "Content");
+  const normalizedContent = useMemo(() => normalizeContentField(rawContent), [rawContent]);
   const dataRoom = ensureHttp(field(record, "Data Room") as string | undefined);
-  const updatePdf = (() => {
-    const attachments = field(record, "Update PDF");
-    if (Array.isArray(attachments) && attachments.length > 0) {
-      const candidate = attachments[0];
+  const rawUpdatePdf = field(record, "Update PDF");
+  const updatePdf = useMemo(() => {
+    if (Array.isArray(rawUpdatePdf) && rawUpdatePdf.length > 0) {
+      const candidate = rawUpdatePdf[0];
       if (candidate && typeof candidate === "object" && "url" in candidate) {
         return candidate as AirtableAttachment;
       }
     }
     return undefined;
-  })();
+  }, [rawUpdatePdf]);
+  const rawContentAttachments = field(record, "Content Att");
   const contentAttachments = useMemo(() => {
-    const attachments = field(record, "Content Att");
-    if (Array.isArray(attachments)) {
-      return attachments.filter((item): item is AirtableAttachment => Boolean(item && typeof item === "object" && "url" in item));
+    if (Array.isArray(rawContentAttachments)) {
+      return rawContentAttachments.filter((item): item is AirtableAttachment => Boolean(item && typeof item === "object" && "url" in item));
     }
     return [];
-  }, [record]);
+  }, [rawContentAttachments]);
   const partnerNames = toTextArray(field(record, "Partner Names"));
   const partnerEmails = toTextArray(field(record, "Partner Emails"));
   const contactNames = toTextArray(field(record, "Contacts"));
   const partnerList = toTextArray(field(record, "Partner List"));
 
-  const preview = useMemo(() => getPreviewText(content), [content]);
+  const preview = useMemo(() => getPreviewText(normalizedContent), [normalizedContent]);
 
-  const summaryHtml = useMemo(() => (content ? renderPlainText(content) : null), [content]);
+  const summaryHtml = useMemo(() => (normalizedContent ? renderPlainText(normalizedContent) : null), [normalizedContent]);
 
   const showPartnerSection = partnerNames.length > 0 || partnerEmails.length > 0 || partnerList.length > 0 || contactNames.length > 0;
 
