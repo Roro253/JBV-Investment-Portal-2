@@ -167,39 +167,26 @@ export default function UpdatesTab() {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams();
-      if (cursor) params.set("offset", cursor);
-      const response = await fetch(`/api/jbv/updates${params.size ? `?${params.toString()}` : ""}`, {
+      const query = cursor ? `?offset=${encodeURIComponent(cursor)}` : "";
+      const response = await fetch(`/api/jbv/updates${query}`, {
         cache: "no-store",
       });
+      const text = await response.text();
       if (!response.ok) {
-        let message = `Request failed with status ${response.status}`;
         try {
-          const errorPayload = await response.json();
-          if (typeof errorPayload?.error === "string" && errorPayload.error.trim()) {
-            message = errorPayload.error.trim();
-          } else if (
-            errorPayload?.error?.message &&
-            typeof errorPayload.error.message === "string" &&
-            errorPayload.error.message.trim()
-          ) {
-            message = errorPayload.error.message.trim();
-          }
-          if (errorPayload?.detail) {
-            const detailText =
-              typeof errorPayload.detail === "string"
-                ? errorPayload.detail
-                : JSON.stringify(errorPayload.detail);
-            if (detailText && detailText !== message) {
-              message = `${message}: ${detailText}`;
-            }
-          }
-        } catch (jsonError) {
-          // Ignore JSON parsing errors and fall back to the default message
+          const parsed = JSON.parse(text);
+          const messageCandidate =
+            parsed?.detail?.error?.message ?? parsed?.detail?.error ?? parsed?.error ?? text;
+          const message =
+            typeof messageCandidate === "string"
+              ? messageCandidate
+              : JSON.stringify(messageCandidate);
+          throw new Error(message || "Airtable request failed");
+        } catch {
+          throw new Error(text || "Airtable request failed");
         }
-        throw new Error(message);
       }
-      const data = (await response.json()) as AirtableResponse;
+      const data = JSON.parse(text) as AirtableResponse;
       setRecords((previous) => (cursor ? [...previous, ...(data.records || [])] : data.records || []));
       setOffset(data.offset ?? null);
     } catch (err: any) {
