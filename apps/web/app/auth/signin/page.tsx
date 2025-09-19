@@ -6,9 +6,12 @@ import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  CredentialsSignin: "We couldn't find that email in our investor records.",
+  Verification: "That sign-in link is invalid or has expired. Please request a new link.",
+  EmailSignin: "We couldn’t send the sign-in email. Please try again or contact Investor Relations.",
   AccessDenied: "You do not have permission to access this area.",
 };
+
+const SUCCESS_MESSAGE = "If your email is registered, we’ve sent a sign-in link. Please check your inbox and spam folder.";
 
 export default function SignInPage() {
   return (
@@ -23,47 +26,40 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmationMessage, setConfirmationMessage] = useState<string | null>(null);
 
   const callbackUrl = searchParams?.get("callbackUrl") || "/lp";
 
   const queryError = useMemo(() => {
     const errorKey = searchParams?.get("error");
     if (!errorKey) return null;
-    return ERROR_MESSAGES[errorKey] || "We were unable to sign you in. Please try again.";
+    return ERROR_MESSAGES[errorKey] || "We were unable to sign you in. Please request a new magic link.";
   }, [searchParams]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus("submitting");
     setErrorMessage(null);
+    setConfirmationMessage(null);
 
     try {
-      const result = await signIn("credentials", {
+      const result = await signIn("email", {
         email,
         callbackUrl,
         redirect: false,
       });
 
-      if (!result) {
-        setErrorMessage("Unexpected authentication response. Please try again.");
-        return;
-      }
-
-      if (result.error) {
-        const friendly = ERROR_MESSAGES[result.error] || "We couldn't verify that email.";
+      if (result?.error) {
+        const friendly = ERROR_MESSAGES[result.error] ||
+          "We couldn’t send the sign-in email. Please try again or contact Investor Relations.";
         setErrorMessage(friendly);
         return;
       }
 
-      if (result.url) {
-        window.location.href = result.url;
-        return;
-      }
-
-      window.location.href = callbackUrl;
+      setConfirmationMessage(SUCCESS_MESSAGE);
     } catch (error) {
-      console.error("[auth] Email sign-in failed", error);
-      setErrorMessage("We couldn't verify that email. Please try again or contact support.");
+      console.error("[auth] Magic link request failed", error);
+      setErrorMessage("We couldn’t send the sign-in email. Please try again or contact Investor Relations.");
     } finally {
       setStatus("idle");
     }
@@ -78,7 +74,7 @@ function SignInForm() {
           </div>
           <h1 className="text-2xl font-semibold text-slate-900">JBV Investment Platform</h1>
           <p className="text-sm text-slate-600">
-            Enter the email associated with your investor profile to access the limited partner experience.
+            Enter the email associated with your investor profile to receive a one-time sign-in link for the LP portal.
           </p>
         </div>
 
@@ -104,22 +100,28 @@ function SignInForm() {
               disabled={!email || status === "submitting"}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-blue-300 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
-              {status === "submitting" ? "Signing in…" : "Continue"}
+              {status === "submitting" ? "Sending…" : "Send magic link"}
             </button>
           </form>
 
-          {(errorMessage || queryError) && (
+          {(confirmationMessage || queryError) && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              {confirmationMessage || queryError}
+            </div>
+          )}
+
+          {errorMessage && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-              {errorMessage || queryError}
+              {errorMessage}
             </div>
           )}
 
           <p className="text-xs text-slate-500">
-            By logging in, you acknowledge that you have read and agree to the {" "}
+            By logging in, you acknowledge that you have read and agree to the{" "}
             <Link className="font-semibold text-blue-600 hover:underline" href="/terms-of-use">
               Terms of Use
             </Link>{" "}
-            and that you have reviewed the {" "}
+            and that you have reviewed the{" "}
             <Link className="font-semibold text-blue-600 hover:underline" href="/privacy-policy">
               Privacy Policy
             </Link>
@@ -127,8 +129,7 @@ function SignInForm() {
           </p>
 
           <p className="text-xs text-slate-500">
-            Need assistance? Contact your JBV relationship manager or email
-            {" "}
+            Need assistance? Contact your JBV relationship manager or email{" "}
             <a className="font-medium text-blue-600 hover:underline" href="mailto:jb@JBV.com">
               jb@JBV.com
             </a>

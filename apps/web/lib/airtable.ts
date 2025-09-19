@@ -1,17 +1,17 @@
 import Airtable from "airtable";
 import Bottleneck from "bottleneck";
+
+import { env } from "./env";
 import { normalizeFieldKey } from "./airtable-shared";
 import type { ExpandedRecord, LinkedRecord } from "./airtable-shared";
 
 export const PARTNER_INVESTMENTS_TABLE = "Partner Investments";
 export const VISIBILITY_RULES_TABLE = "VisibilityRules";
-export const CONTACTS_TABLE = "Contacts";
+export const CONTACTS_TABLE = env.AIRTABLE_CONTACTS_TABLE;
 
 export const VIEW_ID = process.env.AIRTABLE_VIEW_ID || undefined;
 
-export const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY! }).base(
-  process.env.AIRTABLE_BASE_ID!
-);
+export const base = new Airtable({ apiKey: env.AIRTABLE_TOKEN }).base(env.AIRTABLE_BASE_ID);
 
 const LINK_MAP: Record<string, string> = {
   "Target Securities": "Target Securities",
