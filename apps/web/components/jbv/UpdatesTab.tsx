@@ -88,20 +88,24 @@ const initialsFromName = (name?: string) => {
   return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || (parts[0]?.slice(0, 2) ?? "JB").toUpperCase();
 };
 
-const renderPlainText = (value: string) => {
-  const safe = value
+function renderPlainText(input: unknown) {
+  const raw = typeof input === "string" ? input : String(input ?? "");
+  const escaped = raw
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  const linkified = safe.replace(
+  const linkified = escaped.replace(
     /(https?:\/\/[^\s]+)/g,
     '<a class="text-blue-600 underline decoration-blue-200 transition hover:text-blue-700" target="_blank" rel="noreferrer noopener" href="$1">$1</a>',
   );
-  const withBreaks = linkified
-    .replace(/\r?\n\r?\n/g, "</p><p>")
-    .replace(/\r?\n/g, "<br />");
-  return `<p>${withBreaks}</p>`;
-};
+  return (
+    "<p>" +
+    linkified
+      .replace(/\r?\n\r?\n/g, "</p><p>")
+      .replace(/\r?\n/g, "<br />") +
+    "</p>"
+  );
+}
 
 const resolveCompanyName = (record: AirtableRecord) => {
   const candidates = [
@@ -210,7 +214,10 @@ export default function UpdatesTab() {
         throw new Error(message);
       }
       const data = (await response.json()) as AirtableResponse;
-      setRecords((previous) => (cursor ? [...previous, ...(data.records || [])] : data.records || []));
+      if (!data || !Array.isArray(data.records)) {
+        throw new Error("Unexpected response from /api/jbv/updates (no records array)");
+      }
+      setRecords((previous) => (cursor ? [...previous, ...data.records] : data.records));
       setOffset(data.offset ?? null);
     } catch (err: any) {
       setError(err?.message || "Unable to load updates");
@@ -310,7 +317,10 @@ function UpdateCard({ record }: { record: AirtableRecord }) {
   const typeList = toTextArray(field(record, "Type"));
   const postDate = field(record, "Post Date") as string | undefined;
   const companyName = useMemo(() => resolveCompanyName(record), [record]);
-  const content = field(record, "Content") as string | undefined;
+  const rawContent = field(record, "Content");
+  const content =
+    typeof rawContent === "string" ? rawContent : rawContent == null ? "" : String(rawContent);
+  const hasContent = content.trim().length > 0;
   const dataRoom = ensureHttp(field(record, "Data Room") as string | undefined);
   const updatePdf = (() => {
     const attachments = field(record, "Update PDF");
@@ -322,21 +332,23 @@ function UpdateCard({ record }: { record: AirtableRecord }) {
     }
     return undefined;
   })();
+  const rawContentAttachments = field(record, "Content Att");
   const contentAttachments = useMemo(() => {
-    const attachments = field(record, "Content Att");
-    if (Array.isArray(attachments)) {
-      return attachments.filter((item): item is AirtableAttachment => Boolean(item && typeof item === "object" && "url" in item));
+    if (Array.isArray(rawContentAttachments)) {
+      return rawContentAttachments.filter((item): item is AirtableAttachment =>
+        Boolean(item && typeof item === "object" && "url" in item),
+      );
     }
     return [];
-  }, [record]);
+  }, [rawContentAttachments]);
   const partnerNames = toTextArray(field(record, "Partner Names"));
   const partnerEmails = toTextArray(field(record, "Partner Emails"));
   const contactNames = toTextArray(field(record, "Contacts"));
   const partnerList = toTextArray(field(record, "Partner List"));
 
-  const preview = useMemo(() => getPreviewText(content), [content]);
+  const preview = useMemo(() => (hasContent ? getPreviewText(content) : ""), [content, hasContent]);
 
-  const summaryHtml = useMemo(() => (content ? renderPlainText(content) : null), [content]);
+  const summaryHtml = useMemo(() => (hasContent ? renderPlainText(content) : null), [content, hasContent]);
 
   const showPartnerSection = partnerNames.length > 0 || partnerEmails.length > 0 || partnerList.length > 0 || contactNames.length > 0;
 

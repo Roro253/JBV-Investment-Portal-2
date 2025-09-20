@@ -9,38 +9,38 @@ const AIRTABLE_VIEW = "viwVZZ9vksLZQ8GBG";
 
 const AIRTABLE_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${AIRTABLE_TABLE}`;
 
-const FIELDS = [
-  "Post Date",
-  "Company",
-  "New Investment Button",
-  "Send Update",
-  "Type",
-  "Data Room",
-  "Subject",
-  "Content",
-  "Content Att",
-  "Contacts",
-  "Target Securities",
-  "Company New",
-  "Stage (from Target Securities)",
-  "Logo (from Target Securities)",
-  "Partner Names",
-  "Partner Emails",
-  "Partner List",
-  "Logo",
-  "Update PDF",
-  "Notes",
-  "Assignee",
-];
+// Optional: re-enable once exact spellings are confirmed
+// const FIELDS = [
+//   "Post Date",
+//   "Company",
+//   "New Investment Button",
+//   "Send Update",
+//   "Type",
+//   "Data Room",
+//   "Subject",
+//   "Content",
+//   "Content Att",
+//   "Contacts",
+//   "Target Securities",
+//   "Company New",
+//   "Stage (from Target Securities)",
+//   "Logo (from Target Securities)",
+//   "Partner Names",
+//   "Partner Emails",
+//   "Partner List",
+//   "Logo",
+//   "Update PDF",
+//   "Notes",
+//   "Assignee",
+// ];
 
 function buildUrl(searchParams: URLSearchParams) {
   const url = new URL(AIRTABLE_URL);
+  // Trust the JBV Portal View for filters/sorting
   url.searchParams.set("view", AIRTABLE_VIEW);
   const offset = searchParams.get("offset");
   if (offset) url.searchParams.set("offset", offset);
-  FIELDS.forEach((field) => url.searchParams.append("fields[]", field));
-  url.searchParams.append("sort[0][field]", "Post Date");
-  url.searchParams.append("sort[0][direction]", "desc");
+  // Defer fields[]/sort until field names are 100% confirmed
   return url.toString();
 }
 
